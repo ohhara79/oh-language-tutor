@@ -13,7 +13,7 @@ scummvm 2>&1 \
       --target-language Korean \
       --level intermediate \
       --extra-system-prompt extras/bladerunner.md \
-      --filter-regex '^\d+: "'
+      --filter-regex '^\w+: "'
 ```
 
 Speaker ids come from the Blade Runner cast table in

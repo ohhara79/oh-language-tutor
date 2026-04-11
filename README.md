@@ -53,7 +53,7 @@ scummvm 2>&1 \
       --target-language Korean \
       --level intermediate \
       --extra-system-prompt extras/bladerunner.md \
-      --filter-regex '^\d+: "'
+      --filter-regex '^\w+: "'
 ```
 
 The extras file supplies the Blade Runner cast table, log format,
