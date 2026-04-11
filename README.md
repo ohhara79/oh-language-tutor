@@ -13,15 +13,12 @@ in an optional `--extra-system-prompt` file. Claude sees the combined
 prompt via a persistent session that remembers every prior line in
 the stream, so explanations can reference earlier context naturally.
 
-See `PLAN.md` in this directory for the full design spec.
-
 ## Setup
 
 The project is a `uv` project on Python 3.14.
 
 ```sh
-cd ~/work/oh-language-tutor
-uv sync
+uv sync --frozen --no-dev
 ```
 
 You also need the `claude` CLI on your `$PATH` — the Claude Agent SDK
@@ -36,7 +33,7 @@ learner:
 
 ```sh
 some_command_that_prints_english \
-  | uv run main.py \
+  | uv run --frozen --no-dev main.py \
       --source-language English \
       --target-language Korean \
       --level intermediate
@@ -50,12 +47,13 @@ emits the skip token and the tool suppresses the response.
 ### Blade Runner form (with extras file)
 
 ```sh
-./scummvm 2>&1 \
-  | uv run main.py \
+scummvm 2>&1 \
+  | uv run --frozen --no-dev main.py \
       --source-language English \
       --target-language Korean \
       --level intermediate \
-      --extra-system-prompt extras/bladerunner.md
+      --extra-system-prompt extras/bladerunner.md \
+      --filter-regex '^\d+: "'
 ```
 
 The extras file supplies the Blade Runner cast table, log format,
