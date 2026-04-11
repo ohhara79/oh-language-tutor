@@ -7,3 +7,119 @@ requires-python = ">=3.14"
 dependencies = [
     "claude-agent-sdk==0.1.58",
 ]
+
+[dependency-groups]
+dev = [
+    "basedpyright==1.31.7",
+    "radon==6.0.1",
+    "ruff==0.12.10",
+    "xenon==0.9.3",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "F",        # Pyflakes
+    "E",        # pycodestyle
+    "W",        # pycodestyle
+#    "C90",      # mccabe
+    "I",        # isort
+    "N",        # pep8-naming
+#    "D",        # pydocstyle
+    "UP",       # pyupgrade
+    "YTT",      # flake8-2020
+    "ANN",      # flake8-annotations
+    "ASYNC",    # flake8-async
+    "S",        # flake8-bandit
+    "BLE",      # flake8-blind-except
+#    "FBT",      # flake8-boolean-trap
+    "B",        # flake8-bugbear
+    "A",        # flake8-builtins
+    "COM",      # flake8-commas
+#    "CPY",      # flake8-copyright
+    "C4",       # flake8-comprehensions
+    "DTZ",      # flake8-datetimez
+    "T10",      # flake8-debugger
+    "DJ",       # flake8-django
+    "EM",       # flake8-errmsg
+    "EXE",      # flake8-executable
+    "FA",       # flake8-future-annotations
+    "ISC",      # flake8-implicit-str-concat
+    "ICN",      # flake8-import-conventions
+    "LOG",      # flake8-logging
+    "G",        # flake8-logging-format
+    "INP",      # flake8-no-pep420
+    "PIE",      # flake8-pie
+    "T20",      # flake8-print
+    "PYI",      # flake8-pyi
+    "PT",       # flake8-pytest-style
+    "Q",        # flake8-quotes
+    "RSE",      # flake8-raise
+    "RET",      # flake8-return
+    "SLF",      # flake8-self
+    "SLOT",     # flake8-slots
+    "SIM",      # flake8-simplify
+    "TID",      # flake8-tidy-imports
+    "TC",       # flake8-type-checking
+    "INT",      # flake8-gettext
+    "ARG",      # flake8-unused-arguments
+    "PTH",      # flake8-use-pathlib
+#    "TD",       # flake8-todo
+#    "FIX",      # flake8-fixme
+#    "ERA",      # eradicate
+    "PD",       # pandas-vet
+    "PGH",      # pygrep-hooks
+    "PL",       # Pylint
+    "TRY",      # tryceratops
+    "FLY",      # flynt
+    "NPY",      # NumPy-specific rules
+    "FAST",     # FastAPI
+    "AIR",      # Airflow
+    "PERF",     # Perflint
+    "FURB",     # refurb
+#    "DOC",      # pydoclint
+    "RUF",      # Ruff-specific rules
+]
+
+ignore = [
+    "ANN204",   # missing-return-type-special-method
+    "ANN401",   # any-type
+    "COM812",   # trailing-comma-missing (conflicts with formatter)
+    "G004",     # logging-f-string
+    "PGH003",   # blanket-type-ignore
+    "PLC0414",  # useless-import-alias
+    "PLR0904",  # too-many-public-methods
+    "PLR0911",  # too-many-return-statements
+    "PLR0912",  # too-many-branches
+    "PLR0913",  # too-many-arguments
+    "PLR0914",  # too-many-locals
+    "PLR0915",  # too-many-statements
+    "PLR0916",  # too-many-boolean-expressions
+    "PLR0917",  # too-many-positional-arguments
+    "PLR1702",  # too-many-nested-blocks
+    "S608",     # hardcoded-sql-expression
+    "S311",     # suspicious-non-cryptographic-random-usage
+]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+pythonPlatform = "Linux"
+typeCheckingMode = "all"
+reportAny = "none"
+reportExplicitAny = "none"
+reportImplicitStringConcatenation = "none"
+reportInvalidCast = "none"
+reportMissingTypeStubs = "none"
+reportPrivateUsage = "none"
+reportUnreachable = "hint"
+reportUnusedCallResult = "none"
+reportUnusedParameter = "none"
