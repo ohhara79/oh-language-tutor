@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import re
 import signal
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -30,18 +32,21 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
 PROJECT_DIR = Path(__file__).resolve().parent
-DEFAULT_SESSION_FILE = PROJECT_DIR / "state" / "session.id"
-DEFAULT_LOG_FILE = PROJECT_DIR / "state" / "tutor.log"
-DEFAULT_MODEL = "claude-opus-4-6"
-DEFAULT_LEVEL = "intermediate"
-DEFAULT_SKIP_TOKEN = "SKIP"
+DEFAULT_SESSION_FILE = PROJECT_DIR / 'state' / 'session.id'
+DEFAULT_LOG_FILE = PROJECT_DIR / 'state' / 'tutor.log'
+DEFAULT_MODEL = 'claude-opus-4-6'
+DEFAULT_LEVEL = 'intermediate'
+DEFAULT_SKIP_TOKEN = 'SKIP'  # noqa: S105
 
 # ANSI escape helpers (suppressed automatically when stdout is not a TTY).
-_RESET = "\033[0m"
-_DIM = "\033[2m"
-_CYAN = "\033[36m"
-_BOLD = "\033[1m"
+_RESET = '\033[0m'
+_DIM = '\033[2m'
+_CYAN = '\033[36m'
+_BOLD = '\033[1m'
 
 
 def build_base_system_prompt(
@@ -63,7 +68,7 @@ Decision rule:
 Explanation structure (skip any empty section, stay under 100 words):
 
   🎯 Translation: <natural {target_language} translation>
-  📚 Vocabulary: <2–3 items, {source_language} → {target_language}>
+  📚 Vocabulary: <2-3 items, {source_language} → {target_language}>
   💡 Expression: <one idiom/slang/grammar pattern, explained in {target_language}>
   🎬 Context:    <one sentence on what the speaker means in THIS moment, referencing earlier lines you've seen in this conversation>
 
@@ -73,7 +78,7 @@ Level guidance:
 - advanced:     explain in plain {source_language}; only use {target_language} for subtle points.
 
 You have a persistent conversation history across every line sent this session, so refer back to prior context naturally (resolving "he"/"she"/"they", noticing callbacks, etc.).
-"""
+"""  # noqa: E501
 
 
 def build_system_prompt(args: argparse.Namespace) -> str:
@@ -85,8 +90,8 @@ def build_system_prompt(args: argparse.Namespace) -> str:
         args.skip_token,
     )
     if args.extra_system_prompt:
-        extra = Path(args.extra_system_prompt).expanduser().read_text(encoding="utf-8")
-        return base + "\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n" + extra
+        extra = Path(args.extra_system_prompt).expanduser().read_text(encoding='utf-8')
+        return base + '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extra
     return base
 
 
@@ -97,48 +102,48 @@ def load_saved_session_id(args: argparse.Namespace) -> str | None:
     if args.resume_id:
         return args.resume_id
     try:
-        sid = Path(args.session_file).expanduser().read_text(encoding="utf-8").strip()
-        return sid or None
+        sid = Path(args.session_file).expanduser().read_text(encoding='utf-8').strip()
     except FileNotFoundError:
         return None
+    return sid or None
 
 
 def save_session_id(path: Path, session_id: str) -> None:
     path = path.expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(session_id + "\n", encoding="utf-8")
+    path.write_text(session_id + '\n', encoding='utf-8')
 
 
 def ansi_enabled() -> bool:
-    return sys.stdout.isatty() and os.environ.get("NO_COLOR", "") == ""
+    return sys.stdout.isatty() and os.environ.get('NO_COLOR', '') == ''
 
 
 def print_header(label: str) -> None:
-    rule = "─" * 72
+    rule = '─' * 72
     if ansi_enabled():
-        sys.stdout.write(f"{_DIM}{_CYAN}── 🎓 {label} {rule[len(label) + 6 :]}{_RESET}\n")
+        sys.stdout.write(f'{_DIM}{_CYAN}── 🎓 {label} {rule[len(label) + 6 :]}{_RESET}\n')
     else:
-        sys.stdout.write(f"── 🎓 {label} {rule[len(label) + 6 :]}\n")
+        sys.stdout.write(f'── 🎓 {label} {rule[len(label) + 6 :]}\n')
     sys.stdout.flush()
 
 
 def print_footer() -> None:
     if ansi_enabled():
-        sys.stdout.write(f"{_DIM}{_CYAN}{'─' * 72}{_RESET}\n\n")
+        sys.stdout.write(f'{_DIM}{_CYAN}{"─" * 72}{_RESET}\n\n')
     else:
-        sys.stdout.write(f"{'─' * 72}\n\n")
+        sys.stdout.write(f'{"─" * 72}\n\n')
     sys.stdout.flush()
 
 
 def extract_label(raw_line: str) -> str:
     """Pull a short header label out of a raw line for the separator."""
-    m = re.match(r"^\s*([^:]{1,40}):\s*\"", raw_line)
+    m = re.match(r'^\s*([^:]{1,40}):\s*\"', raw_line)
     if m:
         return m.group(1).strip()
-    return raw_line[:40].strip() or "line"
+    return raw_line[:40].strip() or 'line'
 
 
-async def stdin_line_stream():
+async def stdin_line_stream() -> AsyncIterator[str]:
     """Async generator yielding one stripped line per stdin line, until EOF."""
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader()
@@ -148,66 +153,66 @@ async def stdin_line_stream():
         raw = await reader.readline()
         if not raw:
             return
-        yield raw.decode("utf-8", errors="replace").rstrip("\n")
+        yield raw.decode('utf-8', errors='replace').rstrip('\n')
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        prog="oh-language-tutor",
-        description="Pipe a text stream in; get Claude explanations out.",
+        prog='oh-language-tutor',
+        description='Pipe a text stream in; get Claude explanations out.',
     )
     p.add_argument(
-        "--source-language",
+        '--source-language',
         required=True,
-        help="Full name of the language being learned (e.g. English).",
+        help='Full name of the language being learned (e.g. English).',
     )
     p.add_argument(
-        "--target-language",
+        '--target-language',
         required=True,
         help="Full name of the learner's native language (e.g. Korean).",
     )
     p.add_argument(
-        "--level",
+        '--level',
         default=DEFAULT_LEVEL,
-        choices=("beginner", "intermediate", "advanced"),
-        help="Learner proficiency (default: %(default)s).",
+        choices=('beginner', 'intermediate', 'advanced'),
+        help='Learner proficiency (default: %(default)s).',
     )
     p.add_argument(
-        "--extra-system-prompt",
-        help="Path to a text file appended to the base system prompt.",
+        '--extra-system-prompt',
+        help='Path to a text file appended to the base system prompt.',
     )
     p.add_argument(
-        "--filter-regex",
-        help="Only send lines matching this regex to the LLM. Omit to send every line.",
+        '--filter-regex',
+        help='Only send lines matching this regex to the LLM. Omit to send every line.',
     )
     p.add_argument(
-        "--skip-token",
+        '--skip-token',
         default=DEFAULT_SKIP_TOKEN,
-        help="Sentinel word the LLM emits for non-content lines (default: %(default)s).",
+        help='Sentinel word the LLM emits for non-content lines (default: %(default)s).',
     )
     p.add_argument(
-        "--model",
+        '--model',
         default=DEFAULT_MODEL,
-        help="Claude model id (default: %(default)s).",
+        help='Claude model id (default: %(default)s).',
     )
     p.add_argument(
-        "--session-file",
+        '--session-file',
         default=str(DEFAULT_SESSION_FILE),
-        help="Where the session id for cross-run resume is stored.",
+        help='Where the session id for cross-run resume is stored.',
     )
     p.add_argument(
-        "--log-file",
+        '--log-file',
         default=str(DEFAULT_LOG_FILE),
-        help="Append-only log of raw input + explanations.",
+        help='Append-only log of raw input + explanations.',
     )
     p.add_argument(
-        "--new-session",
-        action="store_true",
-        help="Ignore any saved session id and start fresh.",
+        '--new-session',
+        action='store_true',
+        help='Ignore any saved session id and start fresh.',
     )
     p.add_argument(
-        "--resume-id",
-        help="Resume a specific session id (overrides --session-file).",
+        '--resume-id',
+        help='Resume a specific session id (overrides --session-file).',
     )
     return p.parse_args(argv)
 
@@ -236,13 +241,12 @@ async def run(args: argparse.Namespace) -> int:
     def _handle_sigint() -> None:
         stop_event.set()
 
-    try:
+    # Windows / restricted env: fall through to default handling.
+    with contextlib.suppress(NotImplementedError):
         asyncio.get_running_loop().add_signal_handler(signal.SIGINT, _handle_sigint)
-    except NotImplementedError:
-        pass  # Windows / restricted env: fall through to default handling.
 
-    with log_path.open("a", encoding="utf-8", buffering=1) as log:
-        log.write(f"\n=== session start model={args.model} resume={resume_id or '-'} ===\n")
+    with log_path.open('a', encoding='utf-8', buffering=1) as log:
+        log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
 
         async with ClaudeSDKClient(options=options) as client:
             async for raw_line in stdin_line_stream():
@@ -250,9 +254,9 @@ async def run(args: argparse.Namespace) -> int:
                     break
 
                 # 1. Passthrough every line to stdout + log.
-                sys.stdout.write(raw_line + "\n")
+                sys.stdout.write(raw_line + '\n')
                 sys.stdout.flush()
-                log.write(raw_line + "\n")
+                log.write(raw_line + '\n')
 
                 # 2. Optional Python-side pre-filter.
                 if filter_re and not filter_re.search(raw_line):
@@ -273,22 +277,18 @@ async def run(args: argparse.Namespace) -> int:
                 try:
                     async for msg in client.receive_response():
                         if isinstance(msg, AssistantMessage):
-                            for block in msg.content:
-                                if isinstance(block, TextBlock):
-                                    buf.append(block.text)
+                            buf.extend(block.text for block in msg.content if isinstance(block, TextBlock))
                         elif isinstance(msg, ResultMessage) and not saved_session_id:
                             try:
                                 save_session_id(session_path, msg.session_id)
                                 saved_session_id = True
                             except OSError as exc:
-                                sys.stderr.write(
-                                    f"[oh-language-tutor] could not save session id: {exc}\n"
-                                )
-                except Exception as exc:
-                    sys.stderr.write(f"[oh-language-tutor] query failed: {exc}\n")
+                                sys.stderr.write(f'[oh-language-tutor] could not save session id: {exc}\n')
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(f'[oh-language-tutor] query failed: {exc}\n')
                     continue
 
-                response = "".join(buf).strip()
+                response = ''.join(buf).strip()
                 if not response:
                     continue
                 if response.upper() == args.skip_token.upper():
@@ -297,15 +297,15 @@ async def run(args: argparse.Namespace) -> int:
                 # 7. Not a skip — print explanation block to stdout + log.
                 label = extract_label(raw_line)
                 print_header(label)
-                sys.stdout.write(response + "\n")
+                sys.stdout.write(response + '\n')
                 sys.stdout.flush()
                 print_footer()
 
-                log.write(f"--- explanation for: {raw_line}\n")
-                log.write(response + "\n")
-                log.write("---\n")
+                log.write(f'--- explanation for: {raw_line}\n')
+                log.write(response + '\n')
+                log.write('---\n')
 
-        log.write("=== session end ===\n")
+        log.write('=== session end ===\n')
 
     return 0
 
@@ -319,5 +319,5 @@ def main() -> None:
     sys.exit(rc)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
