@@ -1,0 +1,9 @@
+[project]
+name = "oh-language-tutor"
+version = "0.1.0"
+description = "oh-language-tutor"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "claude-agent-sdk==0.1.58",
+]
