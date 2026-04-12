@@ -53,15 +53,16 @@ scummvm 2>&1 \
       --target-language Korean \
       --level intermediate \
       --extra-system-prompt extras/bladerunner.md \
-      --filter-regex '^\w+: "'
+      --filter-regex '^\w+: "' \
+      --gui
 ```
 
 The extras file supplies the Blade Runner cast table, log format,
 noir-flavor hints, and a list of ScummVM log patterns to skip.
 
-See [`docs/examples/bladerunner.md`](docs/examples/bladerunner.md) for
-a full transcript of the tutor running against the opening scene at
-Howie Lee's noodle bar.
+See [`docs/examples/bladerunner.md`](docs/examples/bladerunner.md) and
+[`docs/examples/bladerunner.png`](docs/examples/bladerunner.png) for
+example.
 
 ### Writing a new extras file
 

@@ -5,4 +5,5 @@ scummvm 2>&1 | uv run --frozen --no-dev main.py \
             --target-language Korean \
             --level intermediate \
             --extra-system-prompt extras/bladerunner.md \
-            --filter-regex '^\w+: "'
+            --filter-regex '^\w+: "' \
+            --gui
