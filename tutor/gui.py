@@ -485,7 +485,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 tutor_store = TutorStore(log_path.parent / 'tutor.json')
                 cmd_queue: asyncio.Queue[Cmd] = asyncio.Queue()
 
-                app = OhLanguageTutorApp(line_registry=registry, pool=None, cmd_queue=cmd_queue, log=log, tutor_store=tutor_store)
+                app = OhLanguageTutorApp(
+                    line_registry=registry, pool=None, cmd_queue=cmd_queue, log=log, tutor_store=tutor_store
+                )
 
                 pool = FollowupThreadPool(
                     model=args.model,
