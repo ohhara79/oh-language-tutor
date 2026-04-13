@@ -8,10 +8,11 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, override
+from typing import TYPE_CHECKING, Any, ClassVar, override
 from uuid import uuid4
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from markdown_it.token import Token
 from rich.markdown import Markdown as RichMarkdown
 from rich.theme import Theme
 from textual.app import App, ComposeResult
@@ -38,6 +39,7 @@ from tutor.types import (
 
 if TYPE_CHECKING:
     import argparse
+    from collections.abc import Iterable
     from typing import TextIO
 
 
@@ -58,13 +60,84 @@ _MD_THEME = Theme(
         'markdown.table.border': 'white',
         'markdown.table.header': 'bold white',
         'markdown.link': 'underline white',
+        'markdown.strong': 'bold white',
+        'markdown.emph': 'italic white',
     }
 )
 
 
-def _rich_md(text: str) -> RichMarkdown:
+# CommonMark's emphasis rules fail when a closing ** (or *) is preceded by
+# punctuation and followed by a word character — common in CJK text where no
+# space separates bold spans from surrounding characters.  We side-step this
+# by converting **/​* emphasis to HTML <strong>/<em> tags with a regex *before*
+# markdown-it parses the text, then mapping the resulting html_inline tokens
+# back to strong/em tokens that Rich knows how to style.
+_RE_STRONG = re.compile(r'\*\*(?!\s)(.+?)(?<!\s)\*\*')
+_RE_EMPH = re.compile(r'(?<!\*)\*(?!\*|\s)(.+?)(?<!\s|\*)\*(?!\*)')
+
+
+def _emphasis_to_html(text: str) -> str:
+    """Replace ``**text**`` / ``*text*`` with HTML tags before parsing."""
+    text = _RE_STRONG.sub(r'<strong>\1</strong>', text)
+    return _RE_EMPH.sub(r'<em>\1</em>', text)
+
+
+class _CJKMarkdown(RichMarkdown):
+    """Markdown subclass with robust CJK emphasis handling."""
+
+    def __init__(self, markup: str, **kwargs: Any) -> None:
+        super().__init__(_emphasis_to_html(markup), **kwargs)
+
+    @override
+    def _flatten_tokens(self, tokens: Iterable[Token]) -> Iterable[Token]:  # type: ignore[override]
+        _open: dict[str, str] = {'<strong>': 'strong', '<em>': 'em'}
+        _close: dict[str, str] = {'</strong>': 'strong', '</em>': 'em'}
+        for token in super()._flatten_tokens(tokens):
+            if token.type != 'html_inline':
+                yield token
+                continue
+            stripped = token.content.strip()
+            if stripped in _open:
+                tag = _open[stripped]
+                yield Token(
+                    type=f'{tag}_open',
+                    tag=tag,
+                    nesting=1,
+                    attrs={},
+                    map=None,
+                    level=0,
+                    children=None,
+                    content='',
+                    markup='**' if tag == 'strong' else '*',
+                    info='',
+                    meta={},
+                    block=False,
+                    hidden=False,
+                )
+            elif stripped in _close:
+                tag = _close[stripped]
+                yield Token(
+                    type=f'{tag}_close',
+                    tag=tag,
+                    nesting=-1,
+                    attrs={},
+                    map=None,
+                    level=0,
+                    children=None,
+                    content='',
+                    markup='**' if tag == 'strong' else '*',
+                    info='',
+                    meta={},
+                    block=False,
+                    hidden=False,
+                )
+            else:
+                yield token
+
+
+def _rich_md(text: str) -> _CJKMarkdown:
     """Wrap text in a Rich Markdown renderable."""
-    return RichMarkdown(text, style='white')
+    return _CJKMarkdown(text, style='white')
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +376,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             self._streaming_label = Static('', classes='thread-msg')
             container.mount(self._streaming_label)
         self._streaming_text += chunk
-        self._streaming_label.update(self._streaming_text)
+        self._streaming_label.update(_rich_md(self._streaming_text))
         container.scroll_end(animate=False)
 
     def on_thread_done(self, thread_id: str) -> None:
