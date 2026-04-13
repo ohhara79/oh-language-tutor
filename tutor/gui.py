@@ -244,6 +244,12 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self.query_one('#thread-messages', ScrollableContainer).display = False
         self.query_one('#thread-input', Input).display = False
         self._restore_tutor_entries()
+        self.call_after_refresh(self._scroll_panes_to_end)
+
+    def _scroll_panes_to_end(self) -> None:
+        """Scroll both panes to the bottom after layout is computed."""
+        self.query_one('#stream-pane', ScrollableContainer).scroll_end(animate=False)
+        self.query_one('#thread-list-container', ScrollableContainer).scroll_end(animate=False)
 
     def _restore_tutor_entries(self) -> None:
         """Populate left pane from saved tutor.json entries."""
