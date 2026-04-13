@@ -21,6 +21,15 @@ class LineRecord:
     timestamp: float = field(default_factory=time.monotonic)
 
 
+@dataclass(slots=True)
+class TutorEntry:
+    """One explained line persisted for left-pane restoration."""
+
+    line_idx: int
+    raw: str
+    explanation: str
+
+
 # ---------------------------------------------------------------------------
 # Thread persistence
 # ---------------------------------------------------------------------------

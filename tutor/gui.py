@@ -24,6 +24,7 @@ from tutor.registry import LineRegistry
 from tutor.session import load_saved_session_id
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore
+from tutor.tutor_store import TutorStore
 from tutor.types import (
     Cmd,
     DeleteThreadCmd,
@@ -32,6 +33,7 @@ from tutor.types import (
     ReopenThreadCmd,
     SendMessageCmd,
     ThreadMeta,
+    TutorEntry,
 )
 
 if TYPE_CHECKING:
@@ -208,6 +210,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         pool: FollowupThreadPool | None,
         cmd_queue: asyncio.Queue[Cmd],
         log: TextIO | None = None,
+        tutor_store: TutorStore | None = None,
     ) -> None:
         super().__init__()
         self._line_registry: LineRegistry = line_registry
@@ -215,6 +218,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._cmd_queue: asyncio.Queue[Cmd] = cmd_queue
         self._line_widgets: dict[int, LineBlock] = {}
         self._session_log: TextIO | None = log
+        self._tutor_store: TutorStore | None = tutor_store
         self._streaming_label: Static | None = None
         self._streaming_text: str = ''
 
@@ -234,11 +238,31 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Load thread list on startup."""
+        """Load thread list and restore left-pane entries on startup."""
         self.console.push_theme(_MD_THEME)
         self._refresh_thread_list()
         self.query_one('#thread-messages', ScrollableContainer).display = False
         self.query_one('#thread-input', Input).display = False
+        self._restore_tutor_entries()
+
+    def _restore_tutor_entries(self) -> None:
+        """Populate left pane from saved tutor.json entries."""
+        if self._tutor_store is None:
+            return
+        entries = self._tutor_store.load()
+        if not entries:
+            return
+        placeholder = self.query('#stream-placeholder')
+        if placeholder:
+            placeholder.first().remove()
+        stream = self.query_one('#stream-pane', ScrollableContainer)
+        for entry in entries:
+            idx = self._line_registry.add_line(entry.raw)
+            self._line_registry.set_explanation(idx, entry.explanation)
+            block = LineBlock(entry.raw, idx)
+            stream.mount(block)
+            stream.mount(ExplanationBlock(entry.explanation))
+            self._line_widgets[idx] = block
 
     # -- OutputSink implementation --------------------------------------------
 
@@ -262,6 +286,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._line_widgets[line_idx] = block
         if at_bottom:
             stream.scroll_end(animate=False)
+        if self._tutor_store is not None:
+            self._tutor_store.append(TutorEntry(line_idx=line_idx, raw=raw, explanation=text))
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
         if thread_id != self._current_thread_id:
@@ -456,9 +482,10 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
                 registry = LineRegistry()
                 store = ThreadStore(log_path.parent / 'threads')
+                tutor_store = TutorStore(log_path.parent / 'tutor.json')
                 cmd_queue: asyncio.Queue[Cmd] = asyncio.Queue()
 
-                app = OhLanguageTutorApp(line_registry=registry, pool=None, cmd_queue=cmd_queue, log=log)
+                app = OhLanguageTutorApp(line_registry=registry, pool=None, cmd_queue=cmd_queue, log=log, tutor_store=tutor_store)
 
                 pool = FollowupThreadPool(
                     model=args.model,
