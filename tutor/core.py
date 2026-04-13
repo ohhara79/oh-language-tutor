@@ -190,9 +190,10 @@ async def run_terminal(args: argparse.Namespace) -> int:
     system_prompt = build_system_prompt(args)
     resume_id = load_saved_session_id(args)
 
-    log_path = Path(args.log_file).expanduser()
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    session_path = Path(args.session_file).expanduser()
+    state_dir = Path(args.state_dir).expanduser()
+    state_dir.mkdir(parents=True, exist_ok=True)
+    log_path = state_dir / 'tutor.log'
+    session_path = state_dir / 'session.id'
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,

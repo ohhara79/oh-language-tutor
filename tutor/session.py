@@ -16,7 +16,7 @@ def load_saved_session_id(args: argparse.Namespace) -> str | None:
     if args.resume_id:
         return args.resume_id
     try:
-        sid = Path(args.session_file).expanduser().read_text(encoding='utf-8').strip()
+        sid = (Path(args.state_dir).expanduser() / 'session.id').read_text(encoding='utf-8').strip()
     except FileNotFoundError:
         return None
     return sid or None

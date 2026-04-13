@@ -6,8 +6,7 @@ import argparse
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_SESSION_FILE = PROJECT_DIR / 'state' / 'session.id'
-DEFAULT_LOG_FILE = PROJECT_DIR / 'state' / 'tutor.log'
+DEFAULT_STATE_DIR = PROJECT_DIR / 'state'
 DEFAULT_MODEL = 'claude-opus-4-6'
 DEFAULT_LEVEL = 'intermediate'
 DEFAULT_SKIP_TOKEN = 'SKIP'  # noqa: S105
@@ -54,14 +53,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help='Claude model id (default: %(default)s).',
     )
     p.add_argument(
-        '--session-file',
-        default=str(DEFAULT_SESSION_FILE),
-        help='Where the session id for cross-run resume is stored.',
-    )
-    p.add_argument(
-        '--log-file',
-        default=str(DEFAULT_LOG_FILE),
-        help='Append-only log of raw input + explanations.',
+        '--state-dir',
+        default=str(DEFAULT_STATE_DIR),
+        help='Directory for all persistent state files (default: %(default)s).',
     )
     p.add_argument(
         '--new-session',
