@@ -143,6 +143,14 @@ class FollowupThreadPool:
             self._sink.on_error(f'thread {thread_id} is not active')
             return
 
+        # Serialize: wait for any prior in-flight response to finish so
+        # ``client.query()`` is never called concurrently on the same
+        # session. Concurrent queries caused replies to arrive out of order
+        # and made Claude see duplicate questions in its own context.
+        if at.task is not None and not at.task.done():
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await at.task
+
         # Lazily create the Claude API session on first message.
         if at.client is None:
             try:
@@ -211,6 +219,18 @@ class FollowupThreadPool:
 
     def load_thread_meta(self, thread_id: str) -> ThreadMeta | None:
         """Load a single thread's metadata from disk."""
+        return self._store.load_thread(thread_id)
+
+    def peek_meta(self, thread_id: str) -> ThreadMeta | None:
+        """Return the in-memory meta if the thread is active, else load from disk.
+
+        In-memory meta reflects messages appended by an in-flight task before
+        its reply has been flushed, so the GUI can render up-to-date state
+        when switching back into a thread whose response is still streaming.
+        """
+        at = self._active.get(thread_id)
+        if at is not None:
+            return at.meta
         return self._store.load_thread(thread_id)
 
     # -- internal -------------------------------------------------------------

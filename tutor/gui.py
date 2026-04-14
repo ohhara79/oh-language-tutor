@@ -471,6 +471,22 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._scroll_left_pane_to_anchor(anchor_idx)
 
     def _reopen_thread(self, thread_id: str) -> None:
+        # Fast path: re-showing the already-active thread (e.g. after
+        # Escape). The backend state is intact and the conversation
+        # container already holds the messages — just unhide it.
+        if self._current_thread_id == thread_id:
+            self._thread_view_mode = 'conversation'
+            self._show_conversation_mode()
+            inp = self.query_one('#thread-input', Input)
+            if self._streaming_label is None:
+                inp.disabled = False
+            inp.focus()
+            if self._pool is not None:
+                meta = self._pool.peek_meta(thread_id)
+                if meta is not None:
+                    self._scroll_left_pane_to_anchor(meta.anchor_idx)
+            return
+
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
 
@@ -480,7 +496,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         if self._pool is None:
             return
-        meta = self._pool.load_thread_meta(thread_id)
+        meta = self._pool.peek_meta(thread_id)
         if meta is None:
             return
 
@@ -517,9 +533,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         status.update(f'Exported to {out}')
 
     def action_hide_thread(self) -> None:
-        if self._current_thread_id:
-            self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
-            self._current_thread_id = None
+        # Toggle to the list view but keep the backend thread (and any
+        # in-flight streaming task) alive. The user can return to the same
+        # thread without losing an in-progress reply.
         self._thread_view_mode = 'list'
         self._show_list_mode()
         self._refresh_thread_list()
