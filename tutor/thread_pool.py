@@ -91,10 +91,8 @@ class FollowupThreadPool:
         entry = entries[anchor_idx]
         anchor = LineRecord(idx=-1, raw=entry.raw, explanation=entry.explanation)
 
-        context_entries = entries[max(0, anchor_idx - 100):anchor_idx]
-        context_lines = [
-            LineRecord(idx=-1, raw=e.raw, explanation=e.explanation) for e in context_entries
-        ]
+        context_entries = entries[max(0, anchor_idx - 100) : anchor_idx]
+        context_lines = [LineRecord(idx=-1, raw=e.raw, explanation=e.explanation) for e in context_entries]
         system_prompt = build_thread_system_prompt(
             self._source_language,
             self._target_language,

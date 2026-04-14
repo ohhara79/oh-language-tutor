@@ -57,11 +57,7 @@ class ThreadMeta:
 
 def format_created_at_utc(created_at: str) -> str:
     """Format a stored ISO-8601 UTC timestamp as 'YYYY-MM-DD HH:MM:SS UTC'."""
-    return (
-        datetime.datetime.fromisoformat(created_at)
-        .astimezone(datetime.UTC)
-        .strftime('%Y-%m-%d %H:%M:%S UTC')
-    )
+    return datetime.datetime.fromisoformat(created_at).astimezone(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')
 
 
 # ---------------------------------------------------------------------------
