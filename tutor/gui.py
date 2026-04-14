@@ -20,6 +20,8 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
 from textual.widgets import Button, Footer, Header, Input, Label, Static
 
+from tutor.html_export import export_to_html
+from tutor.markdown_util import emphasis_to_html
 from tutor.prompts import build_system_prompt
 from tutor.registry import LineRegistry
 from tutor.session import load_saved_session_id
@@ -66,27 +68,18 @@ _MD_THEME = Theme(
 )
 
 
-# CommonMark's emphasis rules fail when a closing ** (or *) is preceded by
-# punctuation and followed by a word character — common in CJK text where no
-# space separates bold spans from surrounding characters.  We side-step this
-# by converting **/​* emphasis to HTML <strong>/<em> tags with a regex *before*
-# markdown-it parses the text, then mapping the resulting html_inline tokens
-# back to strong/em tokens that Rich knows how to style.
-_RE_STRONG = re.compile(r'\*\*(?!\s)(.+?)(?<!\s)\*\*')
-_RE_EMPH = re.compile(r'(?<!\*)\*(?!\*|\s)(.+?)(?<!\s|\*)\*(?!\*)')
-
-
-def _emphasis_to_html(text: str) -> str:
-    """Replace ``**text**`` / ``*text*`` with HTML tags before parsing."""
-    text = _RE_STRONG.sub(r'<strong>\1</strong>', text)
-    return _RE_EMPH.sub(r'<em>\1</em>', text)
-
-
 class _CJKMarkdown(RichMarkdown):
-    """Markdown subclass with robust CJK emphasis handling."""
+    """Markdown subclass with robust CJK emphasis handling.
+
+    The emphasis preprocessor converts ``**text**`` / ``*text*`` to
+    ``<strong>`` / ``<em>`` tags *before* markdown-it parses the text, so
+    CommonMark's emphasis rules don't trip over CJK characters adjacent to
+    the delimiters.  ``_flatten_tokens`` below then maps the resulting
+    ``html_inline`` tokens back to strong/em tokens that Rich can style.
+    """
 
     def __init__(self, markup: str, **kwargs: Any) -> None:
-        super().__init__(_emphasis_to_html(markup), **kwargs)
+        super().__init__(emphasis_to_html(markup), **kwargs)
 
     @override
     def _flatten_tokens(self, tokens: Iterable[Token]) -> Iterable[Token]:  # type: ignore[override]
@@ -270,6 +263,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     CSS: ClassVar[str] = _APP_CSS
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [  # pyright: ignore[reportIncompatibleVariableOverride]
         ('escape', 'hide_thread', 'Hide thread'),
+        ('ctrl+e', 'export_html', 'Export HTML'),
         ('q', 'quit', 'Quit'),
     ]
 
@@ -284,6 +278,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         cmd_queue: asyncio.Queue[Cmd],
         log: TextIO | None = None,
         tutor_store: TutorStore | None = None,
+        thread_store: ThreadStore | None = None,
+        state_dir: Path | None = None,
     ) -> None:
         super().__init__()
         self._line_registry: LineRegistry = line_registry
@@ -292,6 +288,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._line_widgets: dict[int, LineBlock] = {}
         self._session_log: TextIO | None = log
         self._tutor_store: TutorStore | None = tutor_store
+        self._thread_store: ThreadStore | None = thread_store
+        self._state_dir: Path | None = state_dir
         self._streaming_label: Static | None = None
         self._streaming_text: str = ''
 
@@ -486,6 +484,18 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         inp.value = ''
         inp.focus()
 
+    def action_export_html(self) -> None:
+        if self._tutor_store is None or self._thread_store is None or self._state_dir is None:
+            return
+        out = self._state_dir / 'tutor.html'
+        status = self.query_one('#status-bar', Label)
+        try:
+            export_to_html(self._tutor_store, self._thread_store, out)
+        except OSError as exc:
+            status.update(f'Export failed: {exc}')
+            return
+        status.update(f'Exported to {out}')
+
     def action_hide_thread(self) -> None:
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
@@ -565,7 +575,13 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 cmd_queue: asyncio.Queue[Cmd] = asyncio.Queue()
 
                 app = OhLanguageTutorApp(
-                    line_registry=registry, pool=None, cmd_queue=cmd_queue, log=log, tutor_store=tutor_store
+                    line_registry=registry,
+                    pool=None,
+                    cmd_queue=cmd_queue,
+                    log=log,
+                    tutor_store=tutor_store,
+                    thread_store=store,
+                    state_dir=state_dir,
                 )
 
                 pool = FollowupThreadPool(
