@@ -426,6 +426,15 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
     # -- thread management ----------------------------------------------------
 
+    def _scroll_left_pane_to_anchor(self, anchor_idx: int) -> None:
+        if anchor_idx < 0:
+            return
+        stream = self.query_one('#stream-pane', ScrollableContainer)
+        for block in stream.query(LineBlock):
+            if block.tutor_pos == anchor_idx:
+                stream.scroll_to_widget(block, animate=False)
+                return
+
     def _open_new_thread(self, anchor_idx: int) -> None:
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
@@ -448,6 +457,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         inp.disabled = False
         inp.value = ''
         inp.focus()
+        self._scroll_left_pane_to_anchor(anchor_idx)
 
     def _reopen_thread(self, thread_id: str) -> None:
         if self._current_thread_id:
@@ -481,6 +491,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         inp.disabled = False
         inp.value = ''
         inp.focus()
+        self._scroll_left_pane_to_anchor(meta.anchor_idx)
 
     def action_export_html(self) -> None:
         if self._tutor_store is None or self._thread_store is None or self._state_dir is None:
