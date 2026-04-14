@@ -7,6 +7,7 @@ import contextlib
 import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, override
 from uuid import uuid4
@@ -440,7 +441,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
 
-        tid = str(uuid4())[:8]
+        ts = datetime.now().strftime('%Y%m%d%H%M%S')
+        tid = f'tutor_thread_{ts}_{anchor_idx}_{uuid4().hex[:8]}'
         self._current_thread_id = tid
         self._thread_view_mode = 'conversation'
         self._cmd_queue.put_nowait(OpenThreadCmd(thread_id=tid, anchor_idx=anchor_idx))
