@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import markdown as md
 
 from tutor.markdown_util import emphasis_to_html
-from tutor.types import format_created_at_local
+from tutor.types import format_created_at_utc
 
 if TYPE_CHECKING:
     from tutor.thread_store import ThreadStore
@@ -101,7 +101,7 @@ def _render_markdown(text: str) -> str:
 
 
 def _render_thread(thread: ThreadMeta) -> str:
-    when = html.escape(format_created_at_local(thread.created_at))
+    when = html.escape(format_created_at_utc(thread.created_at))
     n = len(thread.messages)
     summary = html.escape(f'Thread ({n} msg{"s" if n != 1 else ""}, {when})')
     parts: list[str] = [f'<details class="thread"><summary>{summary}</summary>']

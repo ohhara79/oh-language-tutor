@@ -7,7 +7,7 @@ import contextlib
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, override
 from uuid import uuid4
@@ -38,7 +38,7 @@ from tutor.types import (
     SendMessageCmd,
     ThreadMeta,
     TutorEntry,
-    format_created_at_local,
+    format_created_at_utc,
 )
 
 if TYPE_CHECKING:
@@ -183,7 +183,7 @@ class ThreadListItem(Horizontal):
         anchor_short = self._meta.anchor_raw[:60]
         msgs = len(self._meta.messages)
         yield Label(
-            f'{anchor_short}  ({msgs} msgs, {format_created_at_local(self._meta.created_at)})',
+            f'{anchor_short}  ({msgs} msgs, {format_created_at_utc(self._meta.created_at)})',
             classes='thread-list-label',
         )
         yield Button('Open', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
@@ -450,7 +450,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
 
-        ts = datetime.now().strftime('%Y%m%d%H%M%S')
+        ts = datetime.now(UTC).strftime('%Y%m%d%H%M%S')
         tid = f'tutor_thread_{ts}_{anchor_idx}_{uuid4().hex[:8]}'
         self._current_thread_id = tid
         self._thread_view_mode = 'conversation'

@@ -55,12 +55,12 @@ class ThreadMeta:
     messages: list[ThreadMessage] = field(default_factory=list)
 
 
-def format_created_at_local(created_at: str) -> str:
-    """Convert a stored ISO-8601 UTC timestamp to local 'YYYY-MM-DD HH:MM:SS'."""
+def format_created_at_utc(created_at: str) -> str:
+    """Format a stored ISO-8601 UTC timestamp as 'YYYY-MM-DD HH:MM:SS UTC'."""
     return (
         datetime.datetime.fromisoformat(created_at)
-        .astimezone()
-        .strftime('%Y-%m-%d %H:%M:%S')
+        .astimezone(datetime.UTC)
+        .strftime('%Y-%m-%d %H:%M:%S UTC')
     )
 
 
