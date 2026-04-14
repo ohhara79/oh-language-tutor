@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import time
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -52,6 +53,15 @@ class ThreadMeta:
     created_at: str  # ISO-8601 datetime string
     anchor_idx: int = -1  # tutor.json array position; -1 for legacy files
     messages: list[ThreadMessage] = field(default_factory=list)
+
+
+def format_created_at_local(created_at: str) -> str:
+    """Convert a stored ISO-8601 UTC timestamp to local 'YYYY-MM-DD HH:MM:SS'."""
+    return (
+        datetime.datetime.fromisoformat(created_at)
+        .astimezone()
+        .strftime('%Y-%m-%d %H:%M:%S')
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,7 @@ from tutor.types import (
     SendMessageCmd,
     ThreadMeta,
     TutorEntry,
+    format_created_at_local,
 )
 
 if TYPE_CHECKING:
@@ -182,7 +183,7 @@ class ThreadListItem(Horizontal):
         anchor_short = self._meta.anchor_raw[:60]
         msgs = len(self._meta.messages)
         yield Label(
-            f'{anchor_short}  ({msgs} msgs, {self._meta.created_at[:10]})',
+            f'{anchor_short}  ({msgs} msgs, {format_created_at_local(self._meta.created_at)})',
             classes='thread-list-label',
         )
         yield Button('Open', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
