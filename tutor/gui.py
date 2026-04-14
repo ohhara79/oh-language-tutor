@@ -295,6 +295,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._state_dir: Path | None = state_dir
         self._streaming_label: Static | None = None
         self._streaming_text: str = ''
+        self._pending_errors: list[str] = []
 
     @override
     def compose(self) -> ComposeResult:
@@ -319,6 +320,10 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self.query_one('#thread-input', Input).display = False
         self._restore_tutor_entries()
         self.call_after_refresh(self._scroll_panes_to_end)
+        if self._pending_errors:
+            last = self._pending_errors[-1]
+            self._pending_errors.clear()
+            self.query_one('#status-bar', Label).update(f'Error: {last}')
 
     def _scroll_panes_to_end(self) -> None:
         """Scroll both panes to the bottom after layout is computed."""
@@ -392,6 +397,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._refresh_thread_list()
 
     def on_error(self, msg: str) -> None:
+        if not self._screen_stack:
+            self._pending_errors.append(msg)
+            return
         self.query_one('#status-bar', Label).update(f'Error: {msg}')
 
     # -- button handlers ------------------------------------------------------
