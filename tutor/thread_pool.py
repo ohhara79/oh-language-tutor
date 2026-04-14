@@ -18,6 +18,12 @@ from claude_agent_sdk import (
 )
 
 from tutor.prompts import build_thread_system_prompt
+from tutor.replay import (
+    REPLAY_MAX_TURNS,
+    build_preamble,
+    notify_fallback,
+    pairs_from_thread,
+)
 from tutor.types import LineRecord, ThreadMessage, ThreadMeta
 
 if TYPE_CHECKING:
@@ -142,8 +148,28 @@ class FollowupThreadPool:
             try:
                 at.client = await self._connect(at.system_prompt, at.resume_session_id)
             except Exception as exc:  # noqa: BLE001
-                self._sink.on_error(f'failed to connect thread {thread_id}: {exc}')
-                return
+                if at.resume_session_id is None:
+                    self._sink.on_error(f'failed to connect thread {thread_id}: {exc}')
+                    return
+                # Resume failed — start a fresh session and replay the thread's
+                # prior turns as a preamble so Claude has context.
+                try:
+                    at.client = await self._connect('', None)
+                except Exception as retry_exc:  # noqa: BLE001
+                    self._sink.on_error(f'failed to connect thread {thread_id}: {retry_exc}')
+                    return
+                all_pairs = pairs_from_thread(at.meta.messages)
+                pairs = all_pairs[-REPLAY_MAX_TURNS:]
+                if pairs:
+                    try:
+                        await at.client.query(build_preamble(pairs))
+                        async for _ in at.client.receive_response():
+                            pass
+                    except Exception as seed_exc:  # noqa: BLE001
+                        self._sink.on_error(f'thread replay failed: {seed_exc}')
+                        return
+                notify_fallback(self._log, self._sink, total=len(all_pairs), replayed=len(pairs))
+                at.resume_session_id = None
 
         at.meta.messages.append(ThreadMessage(role='user', text=text))
         self._store.save_thread(at.meta)

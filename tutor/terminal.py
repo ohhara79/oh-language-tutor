@@ -9,12 +9,14 @@ import signal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk import ClaudeAgentOptions
 
 from tutor.core import stdin_loop
 from tutor.prompts import build_system_prompt
+from tutor.replay import connect_with_fallback
 from tutor.session import load_saved_session_id
 from tutor.sink import TerminalSink, ansi_enabled
+from tutor.tutor_store import TutorStore
 
 if TYPE_CHECKING:
     import argparse
@@ -41,6 +43,12 @@ async def run_terminal(args: argparse.Namespace) -> int:
         allowed_tools=[],
         resume=resume_id,
     )
+    options_fresh = ClaudeAgentOptions(
+        system_prompt=system_prompt,
+        model=args.model,
+        allowed_tools=[],
+        resume=None,
+    )
 
     stop_event = asyncio.Event()
 
@@ -54,9 +62,19 @@ async def run_terminal(args: argparse.Namespace) -> int:
         log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
 
         sink = TerminalSink(log, ansi=ansi_enabled())
+        tutor_store = TutorStore(state_dir / 'tutor.json')
 
-        async with ClaudeSDKClient(options=options) as client:
+        client = await connect_with_fallback(
+            options,
+            fresh=options_fresh,
+            tutor_entries=tutor_store.load() if resume_id else [],
+            sink=sink,
+            log=log,
+        )
+        try:
             await stdin_loop(client, sink, filter_re, stop_event, session_path)
+        finally:
+            await client.__aexit__(None, None, None)
 
         log.write('=== session end ===\n')
 

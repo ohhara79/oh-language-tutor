@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, override
 from uuid import uuid4
 
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk import ClaudeAgentOptions
 from markdown_it.token import Token
 from rich.markdown import Markdown as RichMarkdown
 from rich.theme import Theme
@@ -23,6 +23,7 @@ from textual.widgets import Button, Footer, Header, Input, Label, Static
 from tutor.html_export import export_to_html
 from tutor.markdown_util import emphasis_to_html
 from tutor.prompts import build_system_prompt
+from tutor.replay import connect_with_fallback
 from tutor.session import load_saved_session_id
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore
@@ -560,6 +561,12 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             allowed_tools=[],
             resume=resume_id,
         )
+        options_fresh = ClaudeAgentOptions(
+            system_prompt=system_prompt,
+            model=args.model,
+            allowed_tools=[],
+            resume=None,
+        )
 
         stop_event = asyncio.Event()
 
@@ -605,7 +612,14 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
                 from tutor.core import stdin_loop  # noqa: PLC0415
 
-                async with ClaudeSDKClient(options=options) as client:
+                client = await connect_with_fallback(
+                    options,
+                    fresh=options_fresh,
+                    tutor_entries=tutor_store.load() if resume_id else [],
+                    sink=app,
+                    log=log,
+                )
+                try:
 
                     async def _run_stdin() -> None:
                         await stdin_loop(
@@ -636,6 +650,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                         with contextlib.suppress(asyncio.CancelledError):
                             await dispatch_task
                         await pool.close_all()
+                finally:
+                    await client.__aexit__(None, None, None)
 
                 log.write('=== session end ===\n')
         finally:
