@@ -37,6 +37,7 @@ class _ActiveThread:
     system_prompt: str
     client: ClaudeSDKClient | None = None
     task: asyncio.Task[None] | None = None
+    resume_session_id: str | None = None
 
 
 class FollowupThreadPool:
@@ -111,31 +112,23 @@ class FollowupThreadPool:
         self._log.write(f'=== thread open anchor_raw="{anchor.raw}" thread_id={thread_id} ===\n')
 
     async def reopen_thread(self, thread_id: str) -> None:
-        """Reopen a previously saved thread, resuming the Claude session."""
+        """Reopen a previously saved thread.
+
+        The Claude API session is resumed lazily on the first
+        ``send_message`` call so that viewing thread contents doesn't
+        spawn a CLI subprocess.
+        """
         meta = self._store.load_thread(thread_id)
         if meta is None:
             self._sink.on_error(f'thread {thread_id} not found on disk')
             return
-
-        options = ClaudeAgentOptions(
+        self._active[thread_id] = _ActiveThread(
+            thread_id=thread_id,
+            meta=meta,
             system_prompt='',
-            model=self._model,
-            allowed_tools=[],
-            resume=meta.session_id,
+            resume_session_id=meta.session_id,
         )
-        try:
-            client = ClaudeSDKClient(options=options)
-            await client.__aenter__()
-            self._active[thread_id] = _ActiveThread(
-                thread_id=thread_id,
-                meta=meta,
-                system_prompt='',
-                client=client,
-            )
-            self._log.write(f'=== thread reopen thread_id={thread_id} ===\n')
-        except Exception as exc:  # noqa: BLE001
-            self._sink.on_error(f'session expired for thread {thread_id}: {exc}')
-            return
+        self._log.write(f'=== thread reopen thread_id={thread_id} ===\n')
 
     async def send_message(self, thread_id: str, text: str) -> None:
         """Send a user message and stream the response."""
@@ -147,7 +140,7 @@ class FollowupThreadPool:
         # Lazily create the Claude API session on first message.
         if at.client is None:
             try:
-                at.client = await self._connect(at.system_prompt)
+                at.client = await self._connect(at.system_prompt, at.resume_session_id)
             except Exception as exc:  # noqa: BLE001
                 self._sink.on_error(f'failed to connect thread {thread_id}: {exc}')
                 return
@@ -196,12 +189,21 @@ class FollowupThreadPool:
 
     # -- internal -------------------------------------------------------------
 
-    async def _connect(self, system_prompt: str) -> ClaudeSDKClient:
-        """Create and enter a new Claude API session."""
+    async def _connect(
+        self,
+        system_prompt: str,
+        resume_session_id: str | None = None,
+    ) -> ClaudeSDKClient:
+        """Create and enter a new Claude API session.
+
+        If *resume_session_id* is provided, resume that session instead of
+        starting a fresh one from *system_prompt*.
+        """
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
             model=self._model,
             allowed_tools=[],
+            resume=resume_session_id,
         )
         client = ClaudeSDKClient(options=options)
         await client.__aenter__()
