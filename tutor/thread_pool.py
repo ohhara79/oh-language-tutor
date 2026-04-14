@@ -261,15 +261,16 @@ class FollowupThreadPool:
                     at.meta.session_id = msg.session_id
         except Exception as exc:  # noqa: BLE001
             self._sink.on_error(f'thread query failed: {exc}')
-            return
         finally:
+            # Persist whatever was accumulated even on CancelledError — otherwise
+            # an app shutdown mid-stream leaves the user message on disk with no
+            # matching assistant reply.
+            response = ''.join(buf).strip()
+            if response:
+                at.meta.messages.append(ThreadMessage(role='assistant', text=response))
+                self._store.save_thread(at.meta)
+                self._log.write(f'[assistant] {response}\n')
             self._sink.on_thread_done(at.thread_id)
-
-        response = ''.join(buf).strip()
-        if response:
-            at.meta.messages.append(ThreadMessage(role='assistant', text=response))
-            self._store.save_thread(at.meta)
-            self._log.write(f'[assistant] {response}\n')
 
     @staticmethod
     async def _disconnect(client: ClaudeSDKClient) -> None:
