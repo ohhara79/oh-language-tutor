@@ -169,6 +169,7 @@ class FollowupThreadPool:
         """Disconnect and remove from disk permanently."""
         await self.hide_thread(thread_id)
         self._store.delete_thread(thread_id)
+        self._sink.on_thread_list(self.list_threads())
 
     async def close_all(self) -> None:
         """Disconnect all active threads on shutdown."""

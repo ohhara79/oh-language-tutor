@@ -415,7 +415,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         elif btn_id.startswith('delete-'):
             tid = btn_id.removeprefix('delete-')
             self._cmd_queue.put_nowait(DeleteThreadCmd(thread_id=tid))
-            self._refresh_thread_list()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == 'thread-input' and self._current_thread_id:
