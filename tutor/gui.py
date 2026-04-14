@@ -23,7 +23,6 @@ from textual.widgets import Button, Footer, Header, Input, Label, Static
 from tutor.html_export import export_to_html
 from tutor.markdown_util import emphasis_to_html
 from tutor.prompts import build_system_prompt
-from tutor.registry import LineRegistry
 from tutor.session import load_saved_session_id
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore
@@ -141,10 +140,9 @@ def _rich_md(text: str) -> _CJKMarkdown:
 class LineBlock(Horizontal):
     """Displays a raw input line with an [Ask] button."""
 
-    def __init__(self, raw: str, line_idx: int, tutor_pos: int) -> None:
+    def __init__(self, raw: str, tutor_pos: int) -> None:
         super().__init__()
         self._raw: str = raw
-        self._line_idx: int = line_idx
         self._tutor_pos: int = tutor_pos
 
     @property
@@ -156,7 +154,7 @@ class LineBlock(Horizontal):
         yield Label(self._raw, classes='line-raw')
         yield Button(
             'Ask',
-            id=f'ask-{self._line_idx}',
+            id=f'ask-{self._tutor_pos}',
             classes='ask-btn',
             variant='primary',
             tooltip='Ask a follow-up question about this line',
@@ -278,7 +276,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def __init__(
         self,
         *,
-        line_registry: LineRegistry,
         pool: FollowupThreadPool | None,
         cmd_queue: asyncio.Queue[Cmd],
         log: TextIO | None = None,
@@ -287,10 +284,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         state_dir: Path | None = None,
     ) -> None:
         super().__init__()
-        self._line_registry: LineRegistry = line_registry
         self._pool: FollowupThreadPool | None = pool
         self._cmd_queue: asyncio.Queue[Cmd] = cmd_queue
-        self._line_widgets: dict[int, LineBlock] = {}
         self._tutor_count: int = 0
         self._session_log: TextIO | None = log
         self._tutor_store: TutorStore | None = tutor_store
@@ -340,12 +335,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             placeholder.first().remove()
         stream = self.query_one('#stream-pane', ScrollableContainer)
         for tutor_pos, entry in enumerate(entries):
-            idx = self._line_registry.add_line(entry.raw)
-            self._line_registry.set_explanation(idx, entry.explanation)
-            block = LineBlock(entry.raw, idx, tutor_pos)
-            stream.mount(block)
+            stream.mount(LineBlock(entry.raw, tutor_pos))
             stream.mount(ExplanationBlock(entry.explanation))
-            self._line_widgets[idx] = block
         self._tutor_count = len(entries)
 
     # -- OutputSink implementation --------------------------------------------
@@ -357,18 +348,16 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if placeholder:
             placeholder.first().remove()
 
-    def on_explanation(self, line_idx: int, raw: str, text: str) -> None:
+    def on_explanation(self, raw: str, text: str) -> None:
         if self._session_log:
             self._session_log.write(f'--- explanation for: {raw}\n')
             self._session_log.write(text + '\n')
             self._session_log.write('---\n')
         stream = self.query_one('#stream-pane', ScrollableContainer)
         tutor_pos = self._tutor_count
-        block = LineBlock(raw, line_idx, tutor_pos)
-        stream.mount(block)
+        stream.mount(LineBlock(raw, tutor_pos))
         at_bottom = stream.is_vertical_scroll_end
         stream.mount(ExplanationBlock(text))
-        self._line_widgets[line_idx] = block
         if at_bottom:
             stream.scroll_end(animate=False)
         if self._tutor_store is not None:
@@ -414,11 +403,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         btn_id = event.button.id or ''
         if btn_id.startswith('ask-'):
-            registry_idx = int(btn_id.removeprefix('ask-'))
-            block = self._line_widgets.get(registry_idx)
-            if block is None:
-                return
-            self._open_new_thread(anchor_idx=block.tutor_pos)
+            tutor_pos = int(btn_id.removeprefix('ask-'))
+            self._open_new_thread(anchor_idx=tutor_pos)
         elif btn_id.startswith('reopen-'):
             tid = btn_id.removeprefix('reopen-')
             self._reopen_thread(tid)
@@ -581,13 +567,11 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             with log_path.open('a', encoding='utf-8', buffering=1) as log:
                 log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
 
-                registry = LineRegistry()
                 store = ThreadStore(log_path.parent / 'threads')
                 tutor_store = TutorStore(log_path.parent / 'tutor.json')
                 cmd_queue: asyncio.Queue[Cmd] = asyncio.Queue()
 
                 app = OhLanguageTutorApp(
-                    line_registry=registry,
                     pool=None,
                     cmd_queue=cmd_queue,
                     log=log,
@@ -598,7 +582,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
                 pool = FollowupThreadPool(
                     model=args.model,
-                    registry=registry,
                     sink=app,
                     store=store,
                     tutor_store=tutor_store,
@@ -617,9 +600,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                         await _stdin_loop(
                             client,
                             app,
-                            registry,
                             filter_re,
-                            args.skip_token,
                             stop_event,
                             session_path,
                             use_thread=True,

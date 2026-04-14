@@ -19,7 +19,6 @@ from claude_agent_sdk import (
 )
 
 from tutor.prompts import build_system_prompt
-from tutor.registry import LineRegistry
 from tutor.session import load_saved_session_id, save_session_id
 from tutor.sink import TerminalSink, ansi_enabled
 from tutor.types import (
@@ -91,9 +90,7 @@ async def _stdin_line_stream(
 async def _stdin_loop(
     client: ClaudeSDKClient,
     sink: OutputSink,
-    registry: LineRegistry,
     filter_re: re.Pattern[str] | None,
-    skip_token: str,
     stop_event: asyncio.Event,
     session_path: Path,
     *,
@@ -108,7 +105,6 @@ async def _stdin_loop(
         if stop_event.is_set():
             break
 
-        line_idx = registry.add_line(raw_line)
         sink.on_raw_line(raw_line)
 
         if filter_re and not filter_re.search(raw_line):
@@ -138,12 +134,7 @@ async def _stdin_loop(
         response = ''.join(buf).strip()
         if not response:
             continue
-        if response.upper() == skip_token.upper():
-            sink.on_explanation(line_idx, raw_line, response)
-            continue
-
-        registry.set_explanation(line_idx, response)
-        sink.on_explanation(line_idx, raw_line, response)
+        sink.on_explanation(raw_line, response)
 
 
 # ---------------------------------------------------------------------------
@@ -214,10 +205,9 @@ async def run_terminal(args: argparse.Namespace) -> int:
         log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
 
         sink = TerminalSink(log, ansi=ansi_enabled())
-        registry = LineRegistry()
 
         async with ClaudeSDKClient(options=options) as client:
-            await _stdin_loop(client, sink, registry, filter_re, args.skip_token, stop_event, session_path)
+            await _stdin_loop(client, sink, filter_re, stop_event, session_path)
 
         log.write('=== session end ===\n')
 

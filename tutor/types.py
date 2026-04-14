@@ -66,7 +66,7 @@ class OutputSink(Protocol):
         """A new raw line arrived from stdin (passthrough display)."""
         ...
 
-    def on_explanation(self, line_idx: int, raw: str, text: str) -> None:
+    def on_explanation(self, raw: str, text: str) -> None:
         """An explanation was produced for a line."""
         ...
 

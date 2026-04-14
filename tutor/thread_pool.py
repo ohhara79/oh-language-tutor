@@ -23,7 +23,6 @@ from tutor.types import LineRecord, ThreadMessage, ThreadMeta
 if TYPE_CHECKING:
     from typing import TextIO
 
-    from tutor.registry import LineRegistry
     from tutor.thread_store import ThreadStore
     from tutor.tutor_store import TutorStore
     from tutor.types import OutputSink
@@ -47,7 +46,6 @@ class FollowupThreadPool:
         self,
         *,
         model: str,
-        registry: LineRegistry,
         sink: OutputSink,
         store: ThreadStore,
         tutor_store: TutorStore,
@@ -57,7 +55,6 @@ class FollowupThreadPool:
         level: str,
     ) -> None:
         self._model: str = model
-        self._registry: LineRegistry = registry
         self._sink: OutputSink = sink
         self._store: ThreadStore = store
         self._tutor_store: TutorStore = tutor_store
@@ -87,7 +84,10 @@ class FollowupThreadPool:
         entry = entries[anchor_idx]
         anchor = LineRecord(idx=-1, raw=entry.raw, explanation=entry.explanation)
 
-        context_lines = self._registry.recent(100)
+        context_entries = entries[max(0, anchor_idx - 100):anchor_idx]
+        context_lines = [
+            LineRecord(idx=-1, raw=e.raw, explanation=e.explanation) for e in context_entries
+        ]
         system_prompt = build_thread_system_prompt(
             self._source_language,
             self._target_language,

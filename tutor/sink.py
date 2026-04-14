@@ -37,7 +37,7 @@ class TerminalSink:
         sys.stdout.flush()
         self._log.write(raw + '\n')
 
-    def on_explanation(self, line_idx: int, raw: str, text: str) -> None:  # noqa: ARG002
+    def on_explanation(self, raw: str, text: str) -> None:
         self._print_header()
         sys.stdout.write(text + '\n')
         sys.stdout.flush()
