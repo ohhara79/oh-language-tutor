@@ -592,7 +592,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 )
                 app._pool = pool
 
-                from tutor.core import _dispatch_commands, _stdin_loop  # noqa: PLC0415
+                from tutor.core import _stdin_loop  # noqa: PLC0415
 
                 async with ClaudeSDKClient(options=options) as client:
 
@@ -632,3 +632,42 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 pipe_file.close()
 
         return 0
+
+
+# ---------------------------------------------------------------------------
+# GUI command dispatcher
+# ---------------------------------------------------------------------------
+
+
+async def _dispatch_commands(
+    queue: asyncio.Queue[Cmd],
+    pool: FollowupThreadPool,
+    stop_event: asyncio.Event,
+) -> None:
+    """Read commands from the GUI and dispatch to the thread pool."""
+    while not stop_event.is_set():
+        try:
+            cmd = await asyncio.wait_for(queue.get(), timeout=0.1)
+        except TimeoutError:
+            continue
+        match cmd:
+            case OpenThreadCmd():
+                await pool.open_thread(cmd.thread_id, cmd.anchor_idx)
+            case ReopenThreadCmd():
+                await pool.reopen_thread(cmd.thread_id)
+            case SendMessageCmd():
+                await pool.send_message(cmd.thread_id, cmd.text)
+            case HideThreadCmd():
+                await pool.hide_thread(cmd.thread_id)
+            case DeleteThreadCmd():
+                await pool.delete_thread(cmd.thread_id)
+
+
+# ---------------------------------------------------------------------------
+# GUI entry point
+# ---------------------------------------------------------------------------
+
+
+async def run_gui(args: argparse.Namespace) -> int:
+    """Launch the Textual TUI."""
+    return await OhLanguageTutorApp.launch(args)

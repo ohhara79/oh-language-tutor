@@ -23,8 +23,11 @@ def main() -> None:
     args = parse_args()
     runner = run_terminal
     if args.gui:
-        from tutor.gui_launcher import run_gui  # noqa: PLC0415
-
+        try:
+            from tutor.gui import run_gui  # noqa: PLC0415
+        except ImportError:
+            sys.stderr.write('[oh-language-tutor] --gui requires textual. Install it with: uv add textual\n')
+            sys.exit(1)
         runner = run_gui
     try:
         rc = asyncio.run(runner(args))

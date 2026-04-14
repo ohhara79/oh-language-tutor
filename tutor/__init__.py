@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from tutor.core import run_terminal
+from tutor.terminal import run_terminal
 
 __all__ = ['run_terminal']
