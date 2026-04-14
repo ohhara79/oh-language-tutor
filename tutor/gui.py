@@ -141,10 +141,15 @@ def _rich_md(text: str) -> _CJKMarkdown:
 class LineBlock(Horizontal):
     """Displays a raw input line with an [Ask] button."""
 
-    def __init__(self, raw: str, line_idx: int) -> None:
+    def __init__(self, raw: str, line_idx: int, tutor_pos: int) -> None:
         super().__init__()
         self._raw: str = raw
         self._line_idx: int = line_idx
+        self._tutor_pos: int = tutor_pos
+
+    @property
+    def tutor_pos(self) -> int:
+        return self._tutor_pos
 
     @override
     def compose(self) -> ComposeResult:
@@ -286,6 +291,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._pool: FollowupThreadPool | None = pool
         self._cmd_queue: asyncio.Queue[Cmd] = cmd_queue
         self._line_widgets: dict[int, LineBlock] = {}
+        self._tutor_count: int = 0
         self._session_log: TextIO | None = log
         self._tutor_store: TutorStore | None = tutor_store
         self._thread_store: ThreadStore | None = thread_store
@@ -333,13 +339,14 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if placeholder:
             placeholder.first().remove()
         stream = self.query_one('#stream-pane', ScrollableContainer)
-        for entry in entries:
+        for tutor_pos, entry in enumerate(entries):
             idx = self._line_registry.add_line(entry.raw)
             self._line_registry.set_explanation(idx, entry.explanation)
-            block = LineBlock(entry.raw, idx)
+            block = LineBlock(entry.raw, idx, tutor_pos)
             stream.mount(block)
             stream.mount(ExplanationBlock(entry.explanation))
             self._line_widgets[idx] = block
+        self._tutor_count = len(entries)
 
     # -- OutputSink implementation --------------------------------------------
 
@@ -356,7 +363,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             self._session_log.write(text + '\n')
             self._session_log.write('---\n')
         stream = self.query_one('#stream-pane', ScrollableContainer)
-        block = LineBlock(raw, line_idx)
+        tutor_pos = self._tutor_count
+        block = LineBlock(raw, line_idx, tutor_pos)
         stream.mount(block)
         at_bottom = stream.is_vertical_scroll_end
         stream.mount(ExplanationBlock(text))
@@ -364,7 +372,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if at_bottom:
             stream.scroll_end(animate=False)
         if self._tutor_store is not None:
-            self._tutor_store.append(TutorEntry(line_idx=line_idx, raw=raw, explanation=text))
+            self._tutor_store.append(TutorEntry(raw=raw, explanation=text))
+            self._tutor_count += 1
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
         if thread_id != self._current_thread_id:
@@ -405,8 +414,11 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         btn_id = event.button.id or ''
         if btn_id.startswith('ask-'):
-            idx = int(btn_id.removeprefix('ask-'))
-            self._open_new_thread(idx)
+            registry_idx = int(btn_id.removeprefix('ask-'))
+            block = self._line_widgets.get(registry_idx)
+            if block is None:
+                return
+            self._open_new_thread(anchor_idx=block.tutor_pos)
         elif btn_id.startswith('reopen-'):
             tid = btn_id.removeprefix('reopen-')
             self._reopen_thread(tid)
@@ -437,8 +449,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_view_mode = 'conversation'
         self._cmd_queue.put_nowait(OpenThreadCmd(thread_id=tid, anchor_idx=anchor_idx))
 
-        rec = self._line_registry.get(anchor_idx)
-        anchor_text = rec.raw if rec else f'line {anchor_idx}'
+        entries = self._tutor_store.load() if self._tutor_store is not None else []
+        anchor_text = entries[anchor_idx].raw if 0 <= anchor_idx < len(entries) else f'line {anchor_idx}'
         self._show_conversation_mode()
         container = self.query_one('#thread-messages', ScrollableContainer)
         container.remove_children()
@@ -589,6 +601,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                     registry=registry,
                     sink=app,
                     store=store,
+                    tutor_store=tutor_store,
                     log=log,
                     source_language=args.source_language,
                     target_language=args.target_language,

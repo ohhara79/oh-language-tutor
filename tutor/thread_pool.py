@@ -18,13 +18,14 @@ from claude_agent_sdk import (
 )
 
 from tutor.prompts import build_thread_system_prompt
-from tutor.types import ThreadMessage, ThreadMeta
+from tutor.types import LineRecord, ThreadMessage, ThreadMeta
 
 if TYPE_CHECKING:
     from typing import TextIO
 
     from tutor.registry import LineRegistry
     from tutor.thread_store import ThreadStore
+    from tutor.tutor_store import TutorStore
     from tutor.types import OutputSink
 
 
@@ -49,6 +50,7 @@ class FollowupThreadPool:
         registry: LineRegistry,
         sink: OutputSink,
         store: ThreadStore,
+        tutor_store: TutorStore,
         log: TextIO,
         source_language: str,
         target_language: str,
@@ -58,6 +60,7 @@ class FollowupThreadPool:
         self._registry: LineRegistry = registry
         self._sink: OutputSink = sink
         self._store: ThreadStore = store
+        self._tutor_store: TutorStore = tutor_store
         self._log: TextIO = log
         self._source_language: str = source_language
         self._target_language: str = target_language
@@ -67,16 +70,22 @@ class FollowupThreadPool:
     # -- public API -----------------------------------------------------------
 
     async def open_thread(self, thread_id: str, anchor_idx: int) -> None:
-        """Create a new followup thread anchored to *anchor_idx*.
+        """Create a new followup thread anchored to tutor.json entry *anchor_idx*.
+
+        The anchor's ``raw`` and ``explanation`` are resolved by reading
+        the ``TutorStore`` at that position — the single source of truth
+        for explained lines, stable across restarts.
 
         The Claude API session is created lazily on the first
         ``send_message`` call so that rapid open/close cycles don't
         spin up (and potentially exhaust) API sessions.
         """
-        anchor = self._registry.get(anchor_idx)
-        if anchor is None:
-            self._sink.on_error(f'line {anchor_idx} not found in registry')
+        entries = self._tutor_store.load()
+        if not 0 <= anchor_idx < len(entries):
+            self._sink.on_error(f'tutor entry {anchor_idx} not found')
             return
+        entry = entries[anchor_idx]
+        anchor = LineRecord(idx=-1, raw=entry.raw, explanation=entry.explanation)
 
         context_lines = self._registry.recent(100)
         system_prompt = build_thread_system_prompt(
@@ -92,6 +101,7 @@ class FollowupThreadPool:
             anchor_raw=anchor.raw,
             session_id=str(uuid4()),
             created_at=now,
+            anchor_idx=anchor_idx,
         )
         self._active[thread_id] = _ActiveThread(
             thread_id=thread_id,

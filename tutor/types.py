@@ -25,7 +25,6 @@ class LineRecord:
 class TutorEntry:
     """One explained line persisted for left-pane restoration."""
 
-    line_idx: int
     raw: str
     explanation: str
 
@@ -51,6 +50,7 @@ class ThreadMeta:
     anchor_raw: str
     session_id: str
     created_at: str  # ISO-8601 datetime string
+    anchor_idx: int = -1  # tutor.json array position; -1 for legacy files
     messages: list[ThreadMessage] = field(default_factory=list)
 
 
@@ -97,7 +97,7 @@ class OpenThreadCmd:
     """Open a new followup thread anchored to a specific line."""
 
     thread_id: str
-    anchor_idx: int
+    anchor_idx: int  # tutor.json array position — persisted on ThreadMeta
 
 
 @dataclass(frozen=True, slots=True)

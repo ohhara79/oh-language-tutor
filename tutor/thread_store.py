@@ -39,6 +39,7 @@ class ThreadStore:
         self._ensure_dir()
         data = {
             'thread_id': meta.thread_id,
+            'anchor_idx': meta.anchor_idx,
             'anchor_raw': meta.anchor_raw,
             'session_id': meta.session_id,
             'created_at': meta.created_at,
@@ -73,6 +74,7 @@ class ThreadStore:
                 anchor_raw=data['anchor_raw'],
                 session_id=data['session_id'],
                 created_at=data['created_at'],
+                anchor_idx=data.get('anchor_idx', -1),
                 messages=messages,
             )
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
