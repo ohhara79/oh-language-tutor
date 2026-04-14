@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
-from tutor.core import _stdin_loop
+from tutor.core import stdin_loop
 from tutor.prompts import build_system_prompt
 from tutor.session import load_saved_session_id
 from tutor.sink import TerminalSink, ansi_enabled
@@ -56,7 +56,7 @@ async def run_terminal(args: argparse.Namespace) -> int:
         sink = TerminalSink(log, ansi=ansi_enabled())
 
         async with ClaudeSDKClient(options=options) as client:
-            await _stdin_loop(client, sink, filter_re, stop_event, session_path)
+            await stdin_loop(client, sink, filter_re, stop_event, session_path)
 
         log.write('=== session end ===\n')
 

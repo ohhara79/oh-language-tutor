@@ -592,12 +592,12 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 )
                 app._pool = pool
 
-                from tutor.core import _stdin_loop  # noqa: PLC0415
+                from tutor.core import stdin_loop  # noqa: PLC0415
 
                 async with ClaudeSDKClient(options=options) as client:
 
                     async def _run_stdin() -> None:
-                        await _stdin_loop(
+                        await stdin_loop(
                             client,
                             app,
                             filter_re,

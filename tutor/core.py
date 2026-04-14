@@ -72,7 +72,7 @@ async def _stdin_line_stream(
 # ---------------------------------------------------------------------------
 
 
-async def _stdin_loop(  # pyright: ignore[reportUnusedFunction] - imported by terminal.py and (at runtime) by gui.py
+async def stdin_loop(
     client: ClaudeSDKClient,
     sink: OutputSink,
     filter_re: re.Pattern[str] | None,
