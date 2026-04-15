@@ -20,10 +20,7 @@ class TutorStore:
         """Read all entries from disk.  Returns ``[]`` on missing/corrupt file."""
         try:
             data = json.loads(self._path.read_text(encoding='utf-8'))
-            return [
-                TutorEntry(raw=e['raw'], explanation=e['explanation'], id=e['id'])
-                for e in data
-            ]
+            return [TutorEntry(raw=e['raw'], explanation=e['explanation'], id=e['id']) for e in data]
         except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as exc:
             if not isinstance(exc, FileNotFoundError):
                 sys.stderr.write(f'[oh-language-tutor] corrupt tutor file {self._path}: {exc}\n')
