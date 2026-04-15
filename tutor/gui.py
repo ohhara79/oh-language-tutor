@@ -159,18 +159,16 @@ class LineBlock(Horizontal):
     def compose(self) -> ComposeResult:
         yield Label(self._raw, classes='line-raw')
         yield Button(
-            'Ask',
+            'ASK',
             id=f'ask-{self._tutor_id}',
             classes='ask-btn',
             variant='primary',
-            tooltip='Ask a follow-up question about this line',
         )
         yield Button(
-            'Del',
+            'DEL',
             id=f'line-delete-{self._tutor_id}',
             classes='line-delete-btn',
             variant='error',
-            tooltip='Delete this line and any threads anchored to it',
         )
 
 
@@ -196,8 +194,8 @@ class ThreadListItem(Horizontal):
             f'{anchor_short}  ({msgs} msgs, {format_created_at_utc(self._meta.created_at)})',
             classes='thread-list-label',
         )
-        yield Button('Open', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
-        yield Button('Del', id=f'delete-{self._meta.thread_id}', classes='thread-delete-btn', variant='error')
+        yield Button('OPEN', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
+        yield Button('DEL', id=f'delete-{self._meta.thread_id}', classes='thread-delete-btn', variant='error')
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +485,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             return
         self._disarm_delete()
         self._delete_arming_id = anchor_id
-        button.label = 'Confirm?'
+        button.label = 'CFM?'
         button.add_class('armed')
         self._delete_arming_timer = self.set_timer(
             3.0, lambda aid=anchor_id: self._disarm_delete_if(aid)
@@ -507,7 +505,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._delete_arming_id = None
         btns = self.query(f'#line-delete-{arming}').results(Button)
         for btn in btns:
-            btn.label = 'Del'
+            btn.label = 'DEL'
             btn.remove_class('armed')
             break
 
@@ -518,7 +516,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             return
         self._disarm_thread_delete()
         self._thread_delete_arming_id = thread_id
-        button.label = 'Confirm?'
+        button.label = 'CFM?'
         button.add_class('armed')
         self._thread_delete_arming_timer = self.set_timer(
             3.0, lambda tid=thread_id: self._disarm_thread_delete_if(tid)
@@ -538,7 +536,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_delete_arming_id = None
         btns = self.query(f'#delete-{arming}').results(Button)
         for btn in btns:
-            btn.label = 'Del'
+            btn.label = 'DEL'
             btn.remove_class('armed')
             break
 
