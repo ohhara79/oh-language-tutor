@@ -195,7 +195,7 @@ class ThreadListItem(Horizontal):
             classes='thread-list-label',
         )
         yield Button('Open', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
-        yield Button('Del', id=f'delete-{self._meta.thread_id}', classes='thread-delete-btn', variant='primary')
+        yield Button('Del', id=f'delete-{self._meta.thread_id}', classes='thread-delete-btn', variant='error')
 
 
 # ---------------------------------------------------------------------------
