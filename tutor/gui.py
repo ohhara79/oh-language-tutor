@@ -47,6 +47,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from typing import TextIO
 
+    from textual.timer import Timer
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -318,6 +320,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._pending_errors: list[str] = []
         self._delete_arming_id: str | None = None
         self._thread_delete_arming_id: str | None = None
+        self._delete_arming_timer: Timer | None = None
+        self._thread_delete_arming_timer: Timer | None = None
 
     @override
     def compose(self) -> ComposeResult:
@@ -414,13 +418,16 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             inp.focus()
 
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:  # noqa: ARG002
-        self._refresh_thread_list()
+        self.call_later(self._refresh_thread_list)
 
     def on_tutor_entry_removed(self, anchor_id: str) -> None:
+        self.call_later(self._apply_tutor_entry_removed, anchor_id)
+
+    def _apply_tutor_entry_removed(self, anchor_id: str) -> None:
         if not anchor_id:
             return
         if self._delete_arming_id == anchor_id:
-            self._delete_arming_id = None
+            self._disarm_delete()
         stream = self.query_one('#stream-pane', ScrollableContainer)
         for block in list(stream.query(LineBlock)):
             if block.tutor_id != anchor_id:
@@ -482,13 +489,18 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._delete_arming_id = anchor_id
         button.label = 'Confirm?'
         button.add_class('armed')
-        self.set_timer(3.0, lambda aid=anchor_id: self._disarm_delete_if(aid))
+        self._delete_arming_timer = self.set_timer(
+            3.0, lambda aid=anchor_id: self._disarm_delete_if(aid)
+        )
 
     def _disarm_delete_if(self, anchor_id: str) -> None:
         if self._delete_arming_id == anchor_id:
             self._disarm_delete()
 
     def _disarm_delete(self) -> None:
+        if self._delete_arming_timer is not None:
+            self._delete_arming_timer.stop()
+            self._delete_arming_timer = None
         arming = self._delete_arming_id
         if arming is None:
             return
@@ -508,13 +520,18 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_delete_arming_id = thread_id
         button.label = 'Confirm?'
         button.add_class('armed')
-        self.set_timer(3.0, lambda tid=thread_id: self._disarm_thread_delete_if(tid))
+        self._thread_delete_arming_timer = self.set_timer(
+            3.0, lambda tid=thread_id: self._disarm_thread_delete_if(tid)
+        )
 
     def _disarm_thread_delete_if(self, thread_id: str) -> None:
         if self._thread_delete_arming_id == thread_id:
             self._disarm_thread_delete()
 
     def _disarm_thread_delete(self) -> None:
+        if self._thread_delete_arming_timer is not None:
+            self._thread_delete_arming_timer.stop()
+            self._thread_delete_arming_timer = None
         arming = self._thread_delete_arming_id
         if arming is None:
             return
