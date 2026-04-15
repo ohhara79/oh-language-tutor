@@ -663,17 +663,22 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                     async def _run_dispatch() -> None:
                         await _dispatch_commands(cmd_queue, pool, stop_event)
 
-                    stdin_task = asyncio.create_task(_run_stdin())
+                    # Only read from stdin when a pipe is feeding us dialog.
+                    # With no pipe, stdin is the tty and reading it would race
+                    # with Textual's own input driver, dropping key/mouse events.
+                    stdin_task = asyncio.create_task(_run_stdin()) if pipe_file is not None else None
                     dispatch_task = asyncio.create_task(_run_dispatch())
 
                     try:
                         await app.run_async()
                     finally:
                         stop_event.set()
-                        stdin_task.cancel()
+                        if stdin_task is not None:
+                            stdin_task.cancel()
                         dispatch_task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await stdin_task
+                        if stdin_task is not None:
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await stdin_task
                         with contextlib.suppress(asyncio.CancelledError):
                             await dispatch_task
                         await pool.close_all()
