@@ -250,6 +250,10 @@ ThreadListItem {
     min-width: 5;
     margin: 0 1;
 }
+.thread-delete-btn.armed {
+    background: $warning;
+    color: $text;
+}
 #thread-input {
     dock: bottom;
     margin: 1;
@@ -313,6 +317,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._streaming_text: str = ''
         self._pending_errors: list[str] = []
         self._delete_arming_id: str | None = None
+        self._thread_delete_arming_id: str | None = None
 
     @override
     def compose(self) -> ComposeResult:
@@ -452,17 +457,21 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if btn_id.startswith('ask-'):
             anchor_id = btn_id.removeprefix('ask-')
             self._disarm_delete()
+            self._disarm_thread_delete()
             self._open_new_thread(anchor_id=anchor_id)
         elif btn_id.startswith('line-delete-'):
             anchor_id = btn_id.removeprefix('line-delete-')
+            self._disarm_thread_delete()
             self._handle_line_delete_press(anchor_id, event.button)
         elif btn_id.startswith('reopen-'):
             tid = btn_id.removeprefix('reopen-')
             self._disarm_delete()
+            self._disarm_thread_delete()
             self._reopen_thread(tid)
         elif btn_id.startswith('delete-'):
             tid = btn_id.removeprefix('delete-')
-            self._cmd_queue.put_nowait(DeleteThreadCmd(thread_id=tid))
+            self._disarm_delete()
+            self._handle_thread_delete_press(tid, event.button)
 
     def _handle_line_delete_press(self, anchor_id: str, button: Button) -> None:
         if self._delete_arming_id == anchor_id:
@@ -485,6 +494,32 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             return
         self._delete_arming_id = None
         btns = self.query(f'#line-delete-{arming}').results(Button)
+        for btn in btns:
+            btn.label = 'Del'
+            btn.remove_class('armed')
+            break
+
+    def _handle_thread_delete_press(self, thread_id: str, button: Button) -> None:
+        if self._thread_delete_arming_id == thread_id:
+            self._disarm_thread_delete()
+            self._cmd_queue.put_nowait(DeleteThreadCmd(thread_id=thread_id))
+            return
+        self._disarm_thread_delete()
+        self._thread_delete_arming_id = thread_id
+        button.label = 'Confirm?'
+        button.add_class('armed')
+        self.set_timer(3.0, lambda tid=thread_id: self._disarm_thread_delete_if(tid))
+
+    def _disarm_thread_delete_if(self, thread_id: str) -> None:
+        if self._thread_delete_arming_id == thread_id:
+            self._disarm_thread_delete()
+
+    def _disarm_thread_delete(self) -> None:
+        arming = self._thread_delete_arming_id
+        if arming is None:
+            return
+        self._thread_delete_arming_id = None
+        btns = self.query(f'#delete-{arming}').results(Button)
         for btn in btns:
             btn.label = 'Del'
             btn.remove_class('armed')
@@ -623,6 +658,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self.query_one('#thread-input', Input).display = False
 
     def _refresh_thread_list(self) -> None:
+        self._disarm_thread_delete()
         container = self.query_one('#thread-list-container', ScrollableContainer)
         container.remove_children()
         if self._pool is None:
