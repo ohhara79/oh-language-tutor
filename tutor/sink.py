@@ -55,6 +55,9 @@ class TerminalSink:
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:
         pass
 
+    def on_tutor_entry_removed(self, anchor_id: str) -> None:
+        pass  # terminal mode does not support deletion
+
     def on_error(self, msg: str) -> None:
         sys.stderr.write(f'[oh-language-tutor] {msg}\n')
 

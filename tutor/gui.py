@@ -32,6 +32,7 @@ from tutor.tutor_store import TutorStore
 from tutor.types import (
     Cmd,
     DeleteThreadCmd,
+    DeleteTutorEntryCmd,
     HideThreadCmd,
     OpenThreadCmd,
     ReopenThreadCmd,
@@ -141,26 +142,33 @@ def _rich_md(text: str) -> _CJKMarkdown:
 
 
 class LineBlock(Horizontal):
-    """Displays a raw input line with an [Ask] button."""
+    """Displays a raw input line with [Ask] and [Del] buttons."""
 
-    def __init__(self, raw: str, tutor_pos: int) -> None:
+    def __init__(self, raw: str, tutor_id: str) -> None:
         super().__init__()
         self._raw: str = raw
-        self._tutor_pos: int = tutor_pos
+        self._tutor_id: str = tutor_id
 
     @property
-    def tutor_pos(self) -> int:
-        return self._tutor_pos
+    def tutor_id(self) -> str:
+        return self._tutor_id
 
     @override
     def compose(self) -> ComposeResult:
         yield Label(self._raw, classes='line-raw')
         yield Button(
             'Ask',
-            id=f'ask-{self._tutor_pos}',
+            id=f'ask-{self._tutor_id}',
             classes='ask-btn',
             variant='primary',
             tooltip='Ask a follow-up question about this line',
+        )
+        yield Button(
+            'Del',
+            id=f'line-delete-{self._tutor_id}',
+            classes='line-delete-btn',
+            variant='error',
+            tooltip='Delete this line and any threads anchored to it',
         )
 
 
@@ -215,6 +223,14 @@ LineBlock {
 .ask-btn {
     min-width: 6;
     margin: 0 1;
+}
+.line-delete-btn {
+    min-width: 5;
+    margin: 0 1;
+}
+.line-delete-btn.armed {
+    background: $warning;
+    color: $text;
 }
 .explanation {
     margin: 0 2 1 2;
@@ -289,7 +305,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         super().__init__()
         self._pool: FollowupThreadPool | None = pool
         self._cmd_queue: asyncio.Queue[Cmd] = cmd_queue
-        self._tutor_count: int = 0
         self._session_log: TextIO | None = log
         self._tutor_store: TutorStore | None = tutor_store
         self._thread_store: ThreadStore | None = thread_store
@@ -297,6 +312,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._streaming_label: Static | None = None
         self._streaming_text: str = ''
         self._pending_errors: list[str] = []
+        self._delete_arming_id: str | None = None
 
     @override
     def compose(self) -> ComposeResult:
@@ -342,10 +358,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if placeholder:
             placeholder.first().remove()
         stream = self.query_one('#stream-pane', ScrollableContainer)
-        for tutor_pos, entry in enumerate(entries):
-            stream.mount(LineBlock(entry.raw, tutor_pos))
+        for entry in entries:
+            stream.mount(LineBlock(entry.raw, entry.id))
             stream.mount(ExplanationBlock(entry.explanation))
-        self._tutor_count = len(entries)
 
     # -- OutputSink implementation --------------------------------------------
 
@@ -361,16 +376,15 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             self._session_log.write(f'--- explanation for: {raw}\n')
             self._session_log.write(text + '\n')
             self._session_log.write('---\n')
+        entry = TutorEntry(raw=raw, explanation=text)
         stream = self.query_one('#stream-pane', ScrollableContainer)
-        tutor_pos = self._tutor_count
-        stream.mount(LineBlock(raw, tutor_pos))
+        stream.mount(LineBlock(raw, entry.id))
         at_bottom = stream.is_vertical_scroll_end
         stream.mount(ExplanationBlock(text))
         if at_bottom:
             stream.scroll_end(animate=False)
         if self._tutor_store is not None:
-            self._tutor_store.append(TutorEntry(raw=raw, explanation=text))
-            self._tutor_count += 1
+            self._tutor_store.append(entry)
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
         if thread_id != self._current_thread_id:
@@ -397,6 +411,28 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:  # noqa: ARG002
         self._refresh_thread_list()
 
+    def on_tutor_entry_removed(self, anchor_id: str) -> None:
+        if not anchor_id:
+            return
+        if self._delete_arming_id == anchor_id:
+            self._delete_arming_id = None
+        stream = self.query_one('#stream-pane', ScrollableContainer)
+        for block in list(stream.query(LineBlock)):
+            if block.tutor_id != anchor_id:
+                continue
+            siblings = list(stream.children)
+            try:
+                pos = siblings.index(block)
+            except ValueError:
+                block.remove()
+                return
+            block.remove()
+            if pos < len(siblings) - 1:
+                explanation = siblings[pos + 1]
+                if isinstance(explanation, ExplanationBlock):
+                    explanation.remove()
+            return
+
     def on_error(self, msg: str) -> None:
         if not self._screen_stack:
             self._pending_errors.append(msg)
@@ -414,14 +450,45 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         btn_id = event.button.id or ''
         if btn_id.startswith('ask-'):
-            tutor_pos = int(btn_id.removeprefix('ask-'))
-            self._open_new_thread(anchor_idx=tutor_pos)
+            anchor_id = btn_id.removeprefix('ask-')
+            self._disarm_delete()
+            self._open_new_thread(anchor_id=anchor_id)
+        elif btn_id.startswith('line-delete-'):
+            anchor_id = btn_id.removeprefix('line-delete-')
+            self._handle_line_delete_press(anchor_id, event.button)
         elif btn_id.startswith('reopen-'):
             tid = btn_id.removeprefix('reopen-')
+            self._disarm_delete()
             self._reopen_thread(tid)
         elif btn_id.startswith('delete-'):
             tid = btn_id.removeprefix('delete-')
             self._cmd_queue.put_nowait(DeleteThreadCmd(thread_id=tid))
+
+    def _handle_line_delete_press(self, anchor_id: str, button: Button) -> None:
+        if self._delete_arming_id == anchor_id:
+            self._disarm_delete()
+            self._cmd_queue.put_nowait(DeleteTutorEntryCmd(anchor_id=anchor_id))
+            return
+        self._disarm_delete()
+        self._delete_arming_id = anchor_id
+        button.label = 'Confirm?'
+        button.add_class('armed')
+        self.set_timer(3.0, lambda aid=anchor_id: self._disarm_delete_if(aid))
+
+    def _disarm_delete_if(self, anchor_id: str) -> None:
+        if self._delete_arming_id == anchor_id:
+            self._disarm_delete()
+
+    def _disarm_delete(self) -> None:
+        arming = self._delete_arming_id
+        if arming is None:
+            return
+        self._delete_arming_id = None
+        btns = self.query(f'#line-delete-{arming}').results(Button)
+        for btn in btns:
+            btn.label = 'Del'
+            btn.remove_class('armed')
+            break
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == 'thread-input' and self._current_thread_id:
@@ -437,27 +504,31 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
     # -- thread management ----------------------------------------------------
 
-    def _scroll_left_pane_to_anchor(self, anchor_idx: int) -> None:
-        if anchor_idx < 0:
+    def _scroll_left_pane_to_anchor_id(self, anchor_id: str) -> None:
+        if not anchor_id:
             return
         stream = self.query_one('#stream-pane', ScrollableContainer)
         for block in stream.query(LineBlock):
-            if block.tutor_pos == anchor_idx:
+            if block.tutor_id == anchor_id:
                 stream.scroll_to_widget(block, animate=False)
                 return
 
-    def _open_new_thread(self, anchor_idx: int) -> None:
+    def _open_new_thread(self, anchor_id: str) -> None:
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
 
         ts = datetime.now(UTC).strftime('%Y%m%d%H%M%S')
-        tid = f'tutor_thread_{ts}_{anchor_idx}_{uuid4().hex[:8]}'
+        tid = f'tutor_thread_{ts}_{uuid4().hex[:8]}'
         self._current_thread_id = tid
         self._thread_view_mode = 'conversation'
-        self._cmd_queue.put_nowait(OpenThreadCmd(thread_id=tid, anchor_idx=anchor_idx))
+        self._cmd_queue.put_nowait(OpenThreadCmd(thread_id=tid, anchor_id=anchor_id))
 
-        entries = self._tutor_store.load() if self._tutor_store is not None else []
-        anchor_text = entries[anchor_idx].raw if 0 <= anchor_idx < len(entries) else f'line {anchor_idx}'
+        anchor_text = f'line {anchor_id[:8]}'
+        if self._tutor_store is not None:
+            for e in self._tutor_store.load():
+                if e.id == anchor_id:
+                    anchor_text = e.raw
+                    break
         self._show_conversation_mode()
         container = self.query_one('#thread-messages', ScrollableContainer)
         container.remove_children()
@@ -469,7 +540,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         inp.disabled = False
         inp.value = ''
         inp.focus()
-        self._scroll_left_pane_to_anchor(anchor_idx)
+        self._scroll_left_pane_to_anchor_id(anchor_id)
 
     def _reopen_thread(self, thread_id: str) -> None:
         # Fast path: re-showing the already-active thread (e.g. after
@@ -485,7 +556,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             if self._pool is not None:
                 meta = self._pool.peek_meta(thread_id)
                 if meta is not None:
-                    self._scroll_left_pane_to_anchor(meta.anchor_idx)
+                    self._scroll_left_pane_to_anchor_id(meta.anchor_id)
             return
 
         if self._current_thread_id:
@@ -519,7 +590,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         inp.disabled = False
         inp.value = ''
         inp.focus()
-        self._scroll_left_pane_to_anchor(meta.anchor_idx)
+        self._scroll_left_pane_to_anchor_id(meta.anchor_id)
 
     def action_export_html(self) -> None:
         if self._tutor_store is None or self._thread_store is None or self._state_dir is None:
@@ -614,6 +685,8 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
                 store = ThreadStore(log_path.parent / 'threads')
                 tutor_store = TutorStore(log_path.parent / 'tutor.json')
+                tutor_store.migrate()
+                store.migrate(tutor_store.load())
                 cmd_queue: asyncio.Queue[Cmd] = asyncio.Queue()
 
                 app = OhLanguageTutorApp(
@@ -711,7 +784,7 @@ async def _dispatch_commands(
             continue
         match cmd:
             case OpenThreadCmd():
-                await pool.open_thread(cmd.thread_id, cmd.anchor_idx)
+                await pool.open_thread(cmd.thread_id, cmd.anchor_id)
             case ReopenThreadCmd():
                 await pool.reopen_thread(cmd.thread_id)
             case SendMessageCmd():
@@ -720,6 +793,8 @@ async def _dispatch_commands(
                 await pool.hide_thread(cmd.thread_id)
             case DeleteThreadCmd():
                 await pool.delete_thread(cmd.thread_id)
+            case DeleteTutorEntryCmd():
+                await pool.delete_tutor_entry(cmd.anchor_id)
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import datetime
 import time
 from dataclasses import dataclass, field
 from typing import Protocol
+from uuid import uuid4
 
 # ---------------------------------------------------------------------------
 # Line registry record
@@ -28,6 +29,7 @@ class TutorEntry:
 
     raw: str
     explanation: str
+    id: str = field(default_factory=lambda: uuid4().hex)
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +53,7 @@ class ThreadMeta:
     anchor_raw: str
     session_id: str
     created_at: str  # ISO-8601 datetime string
-    anchor_idx: int = -1  # tutor.json array position; -1 for legacy files
+    anchor_id: str = ''  # TutorEntry.id; empty for legacy files that could not be migrated
     messages: list[ThreadMessage] = field(default_factory=list)
 
 
@@ -88,6 +90,10 @@ class OutputSink(Protocol):
         """The full list of saved threads is available."""
         ...
 
+    def on_tutor_entry_removed(self, anchor_id: str) -> None:
+        """A left-pane tutor entry was deleted; the UI should drop it."""
+        ...
+
     def on_error(self, msg: str) -> None:
         """An error occurred that the UI should display."""
         ...
@@ -103,7 +109,7 @@ class OpenThreadCmd:
     """Open a new followup thread anchored to a specific line."""
 
     thread_id: str
-    anchor_idx: int  # tutor.json array position — persisted on ThreadMeta
+    anchor_id: str  # TutorEntry.id — persisted on ThreadMeta
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,4 +141,11 @@ class DeleteThreadCmd:
     thread_id: str
 
 
-Cmd = OpenThreadCmd | ReopenThreadCmd | SendMessageCmd | HideThreadCmd | DeleteThreadCmd
+@dataclass(frozen=True, slots=True)
+class DeleteTutorEntryCmd:
+    """Delete a left-pane tutor entry and cascade-delete its threads."""
+
+    anchor_id: str
+
+
+Cmd = OpenThreadCmd | ReopenThreadCmd | SendMessageCmd | HideThreadCmd | DeleteThreadCmd | DeleteTutorEntryCmd

@@ -145,19 +145,20 @@ def _render_orphan_threads(threads: list[ThreadMeta]) -> str:
 
 
 def _build_html(entries: list[TutorEntry], threads: list[ThreadMeta]) -> str:
-    threads_by_pos: dict[int, list[ThreadMeta]] = defaultdict(list)
+    threads_by_id: dict[str, list[ThreadMeta]] = defaultdict(list)
     legacy_by_raw: dict[str, list[ThreadMeta]] = defaultdict(list)
     for t in threads:
-        if t.anchor_idx >= 0:
-            threads_by_pos[t.anchor_idx].append(t)
+        if t.anchor_id:
+            threads_by_id[t.anchor_id].append(t)
         else:
             legacy_by_raw[t.anchor_raw].append(t)
 
+    live_ids = {e.id for e in entries}
     rendered_legacy_raws: set[str] = set()
 
     body_parts: list[str] = []
-    for i, entry in enumerate(entries):
-        matching = list(threads_by_pos.get(i, []))
+    for entry in entries:
+        matching = list(threads_by_id.get(entry.id, []))
         if entry.raw in legacy_by_raw and entry.raw not in rendered_legacy_raws:
             matching.extend(legacy_by_raw[entry.raw])
             rendered_legacy_raws.add(entry.raw)
@@ -165,8 +166,8 @@ def _build_html(entries: list[TutorEntry], threads: list[ThreadMeta]) -> str:
 
     orphans: list[ThreadMeta] = []
     for t in threads:
-        if t.anchor_idx >= 0:
-            if t.anchor_idx >= len(entries):
+        if t.anchor_id:
+            if t.anchor_id not in live_ids:
                 orphans.append(t)
         elif t.anchor_raw not in rendered_legacy_raws:
             orphans.append(t)

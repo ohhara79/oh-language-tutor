@@ -73,20 +73,22 @@ class FollowupThreadPool:
 
     # -- public API -----------------------------------------------------------
 
-    async def open_thread(self, thread_id: str, anchor_idx: int) -> None:
-        """Create a new followup thread anchored to tutor.json entry *anchor_idx*.
+    async def open_thread(self, thread_id: str, anchor_id: str) -> None:
+        """Create a new followup thread anchored to tutor entry *anchor_id*.
 
         The anchor's ``raw`` and ``explanation`` are resolved by reading
-        the ``TutorStore`` at that position — the single source of truth
-        for explained lines, stable across restarts.
+        the ``TutorStore`` — the single source of truth for explained lines,
+        stable across restarts. The current array position is derived from
+        the id so the 100-line context window reflects the live file.
 
         The Claude API session is created lazily on the first
         ``send_message`` call so that rapid open/close cycles don't
         spin up (and potentially exhaust) API sessions.
         """
         entries = self._tutor_store.load()
-        if not 0 <= anchor_idx < len(entries):
-            self._sink.on_error(f'tutor entry {anchor_idx} not found')
+        anchor_idx = next((i for i, e in enumerate(entries) if e.id == anchor_id), -1)
+        if anchor_idx < 0:
+            self._sink.on_error(f'tutor entry {anchor_id} not found')
             return
         entry = entries[anchor_idx]
         anchor = LineRecord(idx=-1, raw=entry.raw, explanation=entry.explanation)
@@ -106,7 +108,7 @@ class FollowupThreadPool:
             anchor_raw=anchor.raw,
             session_id=str(uuid4()),
             created_at=now,
-            anchor_idx=anchor_idx,
+            anchor_id=anchor_id,
         )
         self._active[thread_id] = _ActiveThread(
             thread_id=thread_id,
@@ -205,6 +207,18 @@ class FollowupThreadPool:
         await self.hide_thread(thread_id)
         self._store.delete_thread(thread_id)
         self._sink.on_thread_list(self.list_threads())
+
+    async def delete_tutor_entry(self, anchor_id: str) -> None:
+        """Remove a tutor entry and cascade-delete every thread anchored to it."""
+        if not anchor_id:
+            return
+        active_to_close = [tid for tid, at in self._active.items() if at.meta.anchor_id == anchor_id]
+        for tid in active_to_close:
+            await self.hide_thread(tid)
+        self._store.delete_by_anchor_id(anchor_id)
+        self._tutor_store.delete(anchor_id)
+        self._sink.on_thread_list(self.list_threads())
+        self._sink.on_tutor_entry_removed(anchor_id)
 
     async def close_all(self) -> None:
         """Disconnect all active threads on shutdown."""

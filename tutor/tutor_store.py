@@ -6,6 +6,8 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
 from tutor.types import TutorEntry
 
@@ -17,10 +19,22 @@ class TutorStore:
         self._path: Path = path
 
     def load(self) -> list[TutorEntry]:
-        """Read all entries from disk.  Returns ``[]`` on missing/corrupt file."""
+        """Read all entries from disk.  Returns ``[]`` on missing/corrupt file.
+
+        Legacy entries without an ``id`` field are materialised with a fresh
+        UUID so downstream code can always rely on a stable id. The new id is
+        not persisted here — call :meth:`migrate` to rewrite the file once.
+        """
         try:
             data = json.loads(self._path.read_text(encoding='utf-8'))
-            return [TutorEntry(raw=e['raw'], explanation=e['explanation']) for e in data]
+            return [
+                TutorEntry(
+                    raw=e['raw'],
+                    explanation=e['explanation'],
+                    id=e.get('id') or uuid4().hex,
+                )
+                for e in data
+            ]
         except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as exc:
             if not isinstance(exc, FileNotFoundError):
                 sys.stderr.write(f'[oh-language-tutor] corrupt tutor file {self._path}: {exc}\n')
@@ -32,9 +46,47 @@ class TutorStore:
         entries.append(entry)
         self._write(entries)
 
+    def delete(self, anchor_id: str) -> bool:
+        """Remove the entry matching *anchor_id*. Returns False if not found."""
+        entries = self.load()
+        kept = [e for e in entries if e.id != anchor_id]
+        if len(kept) == len(entries):
+            return False
+        self._write(kept)
+        return True
+
+    def index_of(self, anchor_id: str) -> int | None:
+        """Return the current array position of *anchor_id*, or None."""
+        for i, e in enumerate(self.load()):
+            if e.id == anchor_id:
+                return i
+        return None
+
+    def migrate(self) -> None:
+        """Persist ids for any legacy entries that lack one. Idempotent."""
+        try:
+            raw = self._path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            return
+        try:
+            data: Any = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(data, list):
+            return
+        items: list[dict[str, Any]] = [i for i in data if isinstance(i, dict)]  # pyright: ignore[reportUnknownVariableType]
+        dirty = False
+        for item in items:
+            if not item.get('id'):
+                item['id'] = uuid4().hex
+                dirty = True
+        if dirty:
+            entries = [TutorEntry(raw=str(i['raw']), explanation=str(i['explanation']), id=str(i['id'])) for i in items]
+            self._write(entries)
+
     def _write(self, entries: list[TutorEntry]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        data = [{'raw': e.raw, 'explanation': e.explanation} for e in entries]
+        data = [{'id': e.id, 'raw': e.raw, 'explanation': e.explanation} for e in entries]
         with tempfile.NamedTemporaryFile(
             mode='w',
             encoding='utf-8',
