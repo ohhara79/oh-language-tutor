@@ -6,12 +6,9 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from tutor.types import ThreadMessage, ThreadMeta
-
-if TYPE_CHECKING:
-    from tutor.types import TutorEntry
 
 
 class ThreadStore:
@@ -69,33 +66,6 @@ class ThreadStore:
                 deleted.append(meta.thread_id)
         return deleted
 
-    def migrate(self, tutor_entries: list[TutorEntry]) -> None:
-        """Resolve legacy ``anchor_idx`` → ``anchor_id`` using a snapshot of tutor entries.
-
-        Idempotent: threads that already have ``anchor_id`` are untouched.
-        Threads whose ``anchor_idx`` is ``-1`` or out of range stay orphaned
-        (``anchor_id=''``) — they still render via ``anchor_raw`` but cannot
-        be scrolled back to.
-        """
-        self._ensure_dir()
-        for p in self._dir.glob('*.json'):
-            try:
-                loaded: Any = json.loads(p.read_text(encoding='utf-8'))
-            except (FileNotFoundError, json.JSONDecodeError):
-                continue
-            if not isinstance(loaded, dict):
-                continue
-            data: dict[str, Any] = loaded  # pyright: ignore[reportUnknownVariableType]
-            if data.get('anchor_id'):
-                continue
-            legacy_idx = data.get('anchor_idx', -1)
-            if isinstance(legacy_idx, int) and 0 <= legacy_idx < len(tutor_entries):
-                data['anchor_id'] = tutor_entries[legacy_idx].id
-            else:
-                data['anchor_id'] = ''
-            data.pop('anchor_idx', None)
-            self._write(p, data)
-
     def _path(self, thread_id: str) -> Path:
         return self._dir / f'{thread_id}.json'
 
@@ -120,7 +90,7 @@ class ThreadStore:
                 anchor_raw=data['anchor_raw'],
                 session_id=data['session_id'],
                 created_at=data['created_at'],
-                anchor_id=data.get('anchor_id', ''),
+                anchor_id=data['anchor_id'],
                 messages=messages,
             )
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:

@@ -53,7 +53,7 @@ class ThreadMeta:
     anchor_raw: str
     session_id: str
     created_at: str  # ISO-8601 datetime string
-    anchor_id: str = ''  # TutorEntry.id; empty for legacy files that could not be migrated
+    anchor_id: str = ''  # TutorEntry.id; empty for orphan threads whose anchor entry was deleted
     messages: list[ThreadMessage] = field(default_factory=list)
 
 

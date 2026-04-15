@@ -721,8 +721,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
                 store = ThreadStore(log_path.parent / 'threads')
                 tutor_store = TutorStore(log_path.parent / 'tutor.json')
-                tutor_store.migrate()
-                store.migrate(tutor_store.load())
                 cmd_queue: asyncio.Queue[Cmd] = asyncio.Queue()
 
                 app = OhLanguageTutorApp(

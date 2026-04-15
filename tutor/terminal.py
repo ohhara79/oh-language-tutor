@@ -63,7 +63,6 @@ async def run_terminal(args: argparse.Namespace) -> int:
 
         sink = TerminalSink(log, ansi=ansi_enabled())
         tutor_store = TutorStore(state_dir / 'tutor.json')
-        tutor_store.migrate()
 
         client = await connect_with_fallback(
             options,

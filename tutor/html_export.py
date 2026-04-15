@@ -146,31 +146,15 @@ def _render_orphan_threads(threads: list[ThreadMeta]) -> str:
 
 def _build_html(entries: list[TutorEntry], threads: list[ThreadMeta]) -> str:
     threads_by_id: dict[str, list[ThreadMeta]] = defaultdict(list)
-    legacy_by_raw: dict[str, list[ThreadMeta]] = defaultdict(list)
     for t in threads:
         if t.anchor_id:
             threads_by_id[t.anchor_id].append(t)
-        else:
-            legacy_by_raw[t.anchor_raw].append(t)
 
     live_ids = {e.id for e in entries}
-    rendered_legacy_raws: set[str] = set()
 
-    body_parts: list[str] = []
-    for entry in entries:
-        matching = list(threads_by_id.get(entry.id, []))
-        if entry.raw in legacy_by_raw and entry.raw not in rendered_legacy_raws:
-            matching.extend(legacy_by_raw[entry.raw])
-            rendered_legacy_raws.add(entry.raw)
-        body_parts.append(_render_line(entry, matching))
+    body_parts: list[str] = [_render_line(entry, threads_by_id.get(entry.id, [])) for entry in entries]
 
-    orphans: list[ThreadMeta] = []
-    for t in threads:
-        if t.anchor_id:
-            if t.anchor_id not in live_ids:
-                orphans.append(t)
-        elif t.anchor_raw not in rendered_legacy_raws:
-            orphans.append(t)
+    orphans = [t for t in threads if not t.anchor_id or t.anchor_id not in live_ids]
     body_parts.append(_render_orphan_threads(orphans))
 
     main = ''.join(body_parts) if (entries or orphans) else '<p class="empty">No content yet.</p>'
