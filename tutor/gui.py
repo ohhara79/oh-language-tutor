@@ -502,9 +502,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._delete_arming_id = anchor_id
         button.label = 'CFM?'
         button.add_class('armed')
-        self._delete_arming_timer = self.set_timer(
-            3.0, lambda aid=anchor_id: self._disarm_delete_if(aid)
-        )
+        self._delete_arming_timer = self.set_timer(3.0, lambda aid=anchor_id: self._disarm_delete_if(aid))
 
     def _disarm_delete_if(self, anchor_id: str) -> None:
         if self._delete_arming_id == anchor_id:
@@ -533,9 +531,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_delete_arming_id = thread_id
         button.label = 'CFM?'
         button.add_class('armed')
-        self._thread_delete_arming_timer = self.set_timer(
-            3.0, lambda tid=thread_id: self._disarm_thread_delete_if(tid)
-        )
+        self._thread_delete_arming_timer = self.set_timer(3.0, lambda tid=thread_id: self._disarm_thread_delete_if(tid))
 
     def _disarm_thread_delete_if(self, thread_id: str) -> None:
         if self._thread_delete_arming_id == thread_id:

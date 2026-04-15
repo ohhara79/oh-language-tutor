@@ -137,67 +137,41 @@ class FollowupThreadPool:
         self._log.write(f'=== thread reopen thread_id={thread_id} ===\n')
 
     async def send_message(self, thread_id: str, text: str) -> None:
-        """Send a user message and stream the response."""
+        """Schedule a user message and its streamed response.
+
+        Returns as soon as the stream task is spawned so the dispatcher
+        (``_dispatch_commands``) never blocks on a slow or stuck stream.
+        Per-thread serialization (no concurrent ``client.query()`` on the
+        same session) is enforced *inside* the new task by awaiting the
+        prior ``at.task`` before issuing its own query.
+        """
         at = self._active.get(thread_id)
         if at is None:
             self._sink.on_error(f'thread {thread_id} is not active')
             return
-
-        # Serialize: wait for any prior in-flight response to finish so
-        # ``client.query()`` is never called concurrently on the same
-        # session. Concurrent queries caused replies to arrive out of order
-        # and made Claude see duplicate questions in its own context.
-        if at.task is not None and not at.task.done():
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await at.task
-
-        # Lazily create the Claude API session on first message.
-        if at.client is None:
-            try:
-                at.client = await self._connect(at.system_prompt, at.resume_session_id)
-            except Exception as exc:  # noqa: BLE001
-                if at.resume_session_id is None:
-                    self._sink.on_error(f'failed to connect thread {thread_id}: {exc}')
-                    return
-                # Resume failed — start a fresh session and replay the thread's
-                # prior turns as a preamble so Claude has context.
-                try:
-                    at.client = await self._connect('', None)
-                except Exception as retry_exc:  # noqa: BLE001
-                    self._sink.on_error(f'failed to connect thread {thread_id}: {retry_exc}')
-                    return
-                all_pairs = pairs_from_thread(at.meta.messages)
-                pairs = all_pairs[-REPLAY_MAX_TURNS:]
-                if pairs:
-                    try:
-                        await at.client.query(build_preamble(pairs))
-                        async for _ in at.client.receive_response():
-                            pass
-                    except Exception as seed_exc:  # noqa: BLE001
-                        self._sink.on_error(f'thread replay failed: {seed_exc}')
-                        return
-                notify_fallback(self._log, self._sink, total=len(all_pairs), replayed=len(pairs))
-                at.resume_session_id = None
-
-        at.meta.messages.append(ThreadMessage(role='user', text=text))
-        self._store.save_thread(at.meta)
-        self._log.write(f'[user] {text}\n')
-
-        at.task = asyncio.create_task(self._stream_response(at, text))
+        prev_task = at.task
+        at.task = asyncio.create_task(self._stream_response(at, text, prev_task))
         at.task.add_done_callback(self._on_task_done)
 
     async def hide_thread(self, thread_id: str) -> None:
         """Disconnect the session but keep metadata on disk.
 
-        If a response is still streaming, let it finish so the real
-        ``session_id`` and the full reply are captured and saved.
+        Give the in-flight task up to 2 s to finish cleanly so its final
+        reply and ``session_id`` land; if it's stuck, cancel it. The
+        ``_stream_response`` ``finally`` block tolerates ``CancelledError``
+        and still persists whatever was buffered.
         """
         at = self._active.pop(thread_id, None)
         if at is None:
             return
         if at.task and not at.task.done():
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await at.task
+                try:
+                    await asyncio.wait_for(asyncio.shield(at.task), timeout=2.0)
+                except TimeoutError:
+                    at.task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await at.task
         if at.client is not None:
             await self._disconnect(at.client)
         self._log.write(f'=== thread close thread_id={thread_id} ===\n')
@@ -274,12 +248,56 @@ class FollowupThreadPool:
             if exc is not None:
                 self._sink.on_error(f'thread task failed: {exc}')
 
-    async def _stream_response(self, at: _ActiveThread, text: str) -> None:
-        """Query Claude and stream the response to the sink."""
+    async def _stream_response(
+        self,
+        at: _ActiveThread,
+        text: str,
+        prev_task: asyncio.Task[None] | None,
+    ) -> None:
+        """Wait for any prior reply on this thread, then query and stream.
+
+        Running the serialization wait inside the task (instead of in
+        ``send_message``) keeps the command dispatcher free; a stuck
+        upstream reply can no longer block unrelated commands.
+        """
+        if prev_task is not None and not prev_task.done():
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await prev_task
+
         if at.client is None:
-            self._sink.on_error(f'thread {at.thread_id} has no active client')
-            self._sink.on_thread_done(at.thread_id)
-            return
+            try:
+                at.client = await self._connect(at.system_prompt, at.resume_session_id)
+            except Exception as exc:  # noqa: BLE001
+                if at.resume_session_id is None:
+                    self._sink.on_error(f'failed to connect thread {at.thread_id}: {exc}')
+                    self._sink.on_thread_done(at.thread_id)
+                    return
+                # Resume failed — start a fresh session and replay the thread's
+                # prior turns as a preamble so Claude has context.
+                try:
+                    at.client = await self._connect('', None)
+                except Exception as retry_exc:  # noqa: BLE001
+                    self._sink.on_error(f'failed to connect thread {at.thread_id}: {retry_exc}')
+                    self._sink.on_thread_done(at.thread_id)
+                    return
+                all_pairs = pairs_from_thread(at.meta.messages)
+                pairs = all_pairs[-REPLAY_MAX_TURNS:]
+                if pairs:
+                    try:
+                        await at.client.query(build_preamble(pairs))
+                        async for _ in at.client.receive_response():
+                            pass
+                    except Exception as seed_exc:  # noqa: BLE001
+                        self._sink.on_error(f'thread replay failed: {seed_exc}')
+                        self._sink.on_thread_done(at.thread_id)
+                        return
+                notify_fallback(self._log, self._sink, total=len(all_pairs), replayed=len(pairs))
+                at.resume_session_id = None
+
+        at.meta.messages.append(ThreadMessage(role='user', text=text))
+        self._store.save_thread(at.meta)
+        self._log.write(f'[user] {text}\n')
+
         buf: list[str] = []
         try:
             await at.client.query(text)
