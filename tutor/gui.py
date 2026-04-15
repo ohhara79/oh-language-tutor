@@ -374,6 +374,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def on_raw_line(self, raw: str) -> None:
         if self._session_log:
             self._session_log.write(raw + '\n')
+        self.call_later(self._apply_raw_line)
+
+    def _apply_raw_line(self) -> None:
         placeholder = self.query('#stream-placeholder')
         if placeholder:
             placeholder.first().remove()
@@ -384,16 +387,22 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             self._session_log.write(text + '\n')
             self._session_log.write('---\n')
         entry = TutorEntry(raw=raw, explanation=text)
+        if self._tutor_store is not None:
+            self._tutor_store.append(entry)
+        self.call_later(self._apply_explanation, raw, text, entry.id)
+
+    def _apply_explanation(self, raw: str, text: str, entry_id: str) -> None:
         stream = self.query_one('#stream-pane', ScrollableContainer)
-        stream.mount(LineBlock(raw, entry.id))
+        stream.mount(LineBlock(raw, entry_id))
         at_bottom = stream.is_vertical_scroll_end
         stream.mount(ExplanationBlock(text))
         if at_bottom:
             stream.scroll_end(animate=False)
-        if self._tutor_store is not None:
-            self._tutor_store.append(entry)
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
+        self.call_later(self._apply_thread_chunk, thread_id, chunk)
+
+    def _apply_thread_chunk(self, thread_id: str, chunk: str) -> None:
         if thread_id != self._current_thread_id:
             return
         container = self.query_one('#thread-messages', ScrollableContainer)
@@ -405,6 +414,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         container.scroll_end(animate=False)
 
     def on_thread_done(self, thread_id: str) -> None:
+        self.call_later(self._apply_thread_done, thread_id)
+
+    def _apply_thread_done(self, thread_id: str) -> None:
         if thread_id == self._current_thread_id:
             # Re-render with markdown formatting now that the full text is available.
             if self._streaming_label is not None and self._streaming_text:
@@ -447,6 +459,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if not self._screen_stack:
             self._pending_errors.append(msg)
             return
+        self.call_later(self._apply_error, msg)
+
+    def _apply_error(self, msg: str) -> None:
         self.query_one('#status-bar', Label).update(f'Error: {msg}')
 
     # -- button handlers ------------------------------------------------------
