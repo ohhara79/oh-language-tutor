@@ -15,16 +15,38 @@ class TutorStore:
 
     def __init__(self, path: Path) -> None:
         self._path: Path = path
+        self._cached_entries: list[TutorEntry] | None = None
+        self._cached_key: tuple[float, int] | None = None
 
     def load(self) -> list[TutorEntry]:
-        """Read all entries from disk.  Returns ``[]`` on missing/corrupt file."""
+        """Read all entries from disk.  Returns ``[]`` on missing/corrupt file.
+
+        Memoized by (mtime, size) so repeated calls in the same UI click
+        (e.g. ``_open_new_thread`` + ``pool.open_thread``) don't reparse
+        hundreds of KB of JSON.  An external edit will change the stat
+        key and trigger a fresh parse.
+        """
+        try:
+            st = self._path.stat()
+        except FileNotFoundError:
+            self._cached_entries = []
+            self._cached_key = None
+            return []
+
+        key = (st.st_mtime, st.st_size)
+        if self._cached_entries is not None and self._cached_key == key:
+            return list(self._cached_entries)
+
         try:
             data = json.loads(self._path.read_text(encoding='utf-8'))
-            return [TutorEntry(raw=e['raw'], explanation=e['explanation'], id=e['id']) for e in data]
-        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            if not isinstance(exc, FileNotFoundError):
-                sys.stderr.write(f'[oh-language-tutor] corrupt tutor file {self._path}: {exc}\n')
+            entries = [TutorEntry(raw=e['raw'], explanation=e['explanation'], id=e['id']) for e in data]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            sys.stderr.write(f'[oh-language-tutor] corrupt tutor file {self._path}: {exc}\n')
             return []
+
+        self._cached_entries = entries
+        self._cached_key = key
+        return list(entries)
 
     def append(self, entry: TutorEntry) -> None:
         """Append a single entry and write back atomically."""
@@ -61,3 +83,11 @@ class TutorStore:
             json.dump(data, tmp, ensure_ascii=False, indent=2)
             tmp_path = Path(tmp.name)
         tmp_path.rename(self._path)
+        try:
+            st = self._path.stat()
+        except FileNotFoundError:
+            self._cached_entries = None
+            self._cached_key = None
+            return
+        self._cached_entries = list(entries)
+        self._cached_key = (st.st_mtime, st.st_size)

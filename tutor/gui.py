@@ -9,7 +9,7 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, override
+from typing import TYPE_CHECKING, Any, ClassVar, cast, override
 from uuid import uuid4
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -154,6 +154,10 @@ class LineBlock(Horizontal):
     @property
     def tutor_id(self) -> str:
         return self._tutor_id
+
+    @property
+    def raw(self) -> str:
+        return self._raw
 
     @override
     def compose(self) -> ComposeResult:
@@ -320,6 +324,14 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_delete_arming_id: str | None = None
         self._delete_arming_timer: Timer | None = None
         self._thread_delete_arming_timer: Timer | None = None
+        # Hot widget references, populated in on_mount so click and
+        # streaming handlers don't walk the ~3.7k-node DOM for each update.
+        # Access before on_mount would raise AttributeError on .display etc.
+        self._stream_pane: ScrollableContainer = cast('ScrollableContainer', None)
+        self._thread_list_container: ScrollableContainer = cast('ScrollableContainer', None)
+        self._thread_messages: ScrollableContainer = cast('ScrollableContainer', None)
+        self._thread_input: Input = cast('Input', None)
+        self._status_bar: Label = cast('Label', None)
 
     @override
     def compose(self) -> ComposeResult:
@@ -339,20 +351,25 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def on_mount(self) -> None:
         """Load thread list and restore left-pane entries on startup."""
         self.console.push_theme(_MD_THEME)
+        self._stream_pane = self.query_one('#stream-pane', ScrollableContainer)
+        self._thread_list_container = self.query_one('#thread-list-container', ScrollableContainer)
+        self._thread_messages = self.query_one('#thread-messages', ScrollableContainer)
+        self._thread_input = self.query_one('#thread-input', Input)
+        self._status_bar = self.query_one('#status-bar', Label)
         self._refresh_thread_list()
-        self.query_one('#thread-messages', ScrollableContainer).display = False
-        self.query_one('#thread-input', Input).display = False
+        self._thread_messages.display = False
+        self._thread_input.display = False
         self._restore_tutor_entries()
         self.call_after_refresh(self._scroll_panes_to_end)
         if self._pending_errors:
             last = self._pending_errors[-1]
             self._pending_errors.clear()
-            self.query_one('#status-bar', Label).update(f'Error: {last}')
+            self._status_bar.update(f'Error: {last}')
 
     def _scroll_panes_to_end(self) -> None:
         """Scroll both panes to the bottom after layout is computed."""
-        self.query_one('#stream-pane', ScrollableContainer).scroll_end(animate=False)
-        self.query_one('#thread-list-container', ScrollableContainer).scroll_end(animate=False)
+        self._stream_pane.scroll_end(animate=False)
+        self._thread_list_container.scroll_end(animate=False)
 
     def _restore_tutor_entries(self) -> None:
         """Populate left pane from saved tutor.json entries."""
@@ -364,10 +381,12 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         placeholder = self.query('#stream-placeholder')
         if placeholder:
             placeholder.first().remove()
-        stream = self.query_one('#stream-pane', ScrollableContainer)
+        stream = self._stream_pane
+        widgets: list[Any] = []
         for entry in entries:
-            stream.mount(LineBlock(entry.raw, entry.id))
-            stream.mount(ExplanationBlock(entry.explanation))
+            widgets.append(LineBlock(entry.raw, entry.id))
+            widgets.append(ExplanationBlock(entry.explanation))
+        stream.mount_all(widgets)
 
     # -- OutputSink implementation --------------------------------------------
 
@@ -392,10 +411,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self.call_later(self._apply_explanation, raw, text, entry.id)
 
     def _apply_explanation(self, raw: str, text: str, entry_id: str) -> None:
-        stream = self.query_one('#stream-pane', ScrollableContainer)
-        stream.mount(LineBlock(raw, entry_id))
+        stream = self._stream_pane
         at_bottom = stream.is_vertical_scroll_end
-        stream.mount(ExplanationBlock(text))
+        stream.mount_all([LineBlock(raw, entry_id), ExplanationBlock(text)])
         if at_bottom:
             stream.scroll_end(animate=False)
 
@@ -405,7 +423,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def _apply_thread_chunk(self, thread_id: str, chunk: str) -> None:
         if thread_id != self._current_thread_id:
             return
-        container = self.query_one('#thread-messages', ScrollableContainer)
+        container = self._thread_messages
         if self._streaming_label is None:
             self._streaming_label = Static('', classes='thread-msg')
             container.mount(self._streaming_label)
@@ -423,7 +441,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 self._streaming_label.update(_rich_md(self._streaming_text))
             self._streaming_label = None
             self._streaming_text = ''
-            inp = self.query_one('#thread-input', Input)
+            inp = self._thread_input
             inp.disabled = False
             inp.focus()
 
@@ -438,7 +456,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             return
         if self._delete_arming_id == anchor_id:
             self._disarm_delete()
-        stream = self.query_one('#stream-pane', ScrollableContainer)
+        stream = self._stream_pane
         for block in list(stream.query(LineBlock)):
             if block.tutor_id != anchor_id:
                 continue
@@ -462,7 +480,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self.call_later(self._apply_error, msg)
 
     def _apply_error(self, msg: str) -> None:
-        self.query_one('#status-bar', Label).update(f'Error: {msg}')
+        self._status_bar.update(f'Error: {msg}')
 
     # -- button handlers ------------------------------------------------------
 
@@ -478,7 +496,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             anchor_id = btn_id.removeprefix('ask-')
             self._disarm_delete()
             self._disarm_thread_delete()
-            self._open_new_thread(anchor_id=anchor_id)
+            parent = event.button.parent
+            anchor_raw = parent.raw if isinstance(parent, LineBlock) else ''
+            self._open_new_thread(anchor_id=anchor_id, anchor_raw=anchor_raw)
         elif btn_id.startswith('line-delete-'):
             anchor_id = btn_id.removeprefix('line-delete-')
             self._disarm_thread_delete()
@@ -558,7 +578,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 return
             event.input.value = ''
             event.input.disabled = True
-            container = self.query_one('#thread-messages', ScrollableContainer)
+            container = self._thread_messages
             container.mount(Static(f'You: {text}', classes='thread-msg thread-msg-user'))
             container.scroll_end(animate=False)
             self._cmd_queue.put_nowait(SendMessageCmd(thread_id=self._current_thread_id, text=text))
@@ -568,13 +588,13 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def _scroll_left_pane_to_anchor_id(self, anchor_id: str) -> None:
         if not anchor_id:
             return
-        stream = self.query_one('#stream-pane', ScrollableContainer)
+        stream = self._stream_pane
         for block in stream.query(LineBlock):
             if block.tutor_id == anchor_id:
                 stream.scroll_to_widget(block, animate=False)
                 return
 
-    def _open_new_thread(self, anchor_id: str) -> None:
+    def _open_new_thread(self, anchor_id: str, anchor_raw: str = '') -> None:
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
 
@@ -584,20 +604,15 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_view_mode = 'conversation'
         self._cmd_queue.put_nowait(OpenThreadCmd(thread_id=tid, anchor_id=anchor_id))
 
-        anchor_text = f'line {anchor_id[:8]}'
-        if self._tutor_store is not None:
-            for e in self._tutor_store.load():
-                if e.id == anchor_id:
-                    anchor_text = e.raw
-                    break
+        anchor_text = anchor_raw or f'line {anchor_id[:8]}'
         self._show_conversation_mode()
-        container = self.query_one('#thread-messages', ScrollableContainer)
+        container = self._thread_messages
         container.remove_children()
         container.mount(Static(f'Thread opened for: {anchor_text}', classes='thread-msg thread-msg-dim'))
         self._streaming_label = None
         self._streaming_text = ''
 
-        inp = self.query_one('#thread-input', Input)
+        inp = self._thread_input
         inp.disabled = False
         inp.value = ''
         inp.focus()
@@ -610,7 +625,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if self._current_thread_id == thread_id:
             self._thread_view_mode = 'conversation'
             self._show_conversation_mode()
-            inp = self.query_one('#thread-input', Input)
+            inp = self._thread_input
             if self._streaming_label is None:
                 inp.disabled = False
             inp.focus()
@@ -635,19 +650,20 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         self._show_conversation_mode()
 
-        container = self.query_one('#thread-messages', ScrollableContainer)
+        container = self._thread_messages
         container.remove_children()
-        container.mount(Static(f'Thread: {meta.anchor_raw}', classes='thread-msg thread-msg-dim'))
+        widgets: list[Any] = [Static(f'Thread: {meta.anchor_raw}', classes='thread-msg thread-msg-dim')]
         for msg in meta.messages:
             if msg.role == 'user':
-                container.mount(Static(f'You: {msg.text}', classes='thread-msg thread-msg-user'))
+                widgets.append(Static(f'You: {msg.text}', classes='thread-msg thread-msg-user'))
             else:
-                container.mount(Static(_rich_md(msg.text), classes='thread-msg'))
+                widgets.append(Static(_rich_md(msg.text), classes='thread-msg'))
+        container.mount_all(widgets)
         container.scroll_end(animate=False)
         self._streaming_label = None
         self._streaming_text = ''
 
-        inp = self.query_one('#thread-input', Input)
+        inp = self._thread_input
         inp.disabled = False
         inp.value = ''
         inp.focus()
@@ -657,7 +673,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if self._tutor_store is None or self._thread_store is None or self._state_dir is None:
             return
         out = self._state_dir / 'tutor.html'
-        status = self.query_one('#status-bar', Label)
+        status = self._status_bar
         try:
             export_to_html(self._tutor_store, self._thread_store, out)
         except OSError as exc:
@@ -674,18 +690,18 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._refresh_thread_list()
 
     def _show_conversation_mode(self) -> None:
-        self.query_one('#thread-list-container', ScrollableContainer).display = False
-        self.query_one('#thread-messages', ScrollableContainer).display = True
-        self.query_one('#thread-input', Input).display = True
+        self._thread_list_container.display = False
+        self._thread_messages.display = True
+        self._thread_input.display = True
 
     def _show_list_mode(self) -> None:
-        self.query_one('#thread-list-container', ScrollableContainer).display = True
-        self.query_one('#thread-messages', ScrollableContainer).display = False
-        self.query_one('#thread-input', Input).display = False
+        self._thread_list_container.display = True
+        self._thread_messages.display = False
+        self._thread_input.display = False
 
     def _refresh_thread_list(self) -> None:
         self._disarm_thread_delete()
-        container = self.query_one('#thread-list-container', ScrollableContainer)
+        container = self._thread_list_container
         container.remove_children()
         if self._pool is None:
             return
@@ -693,8 +709,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if not threads:
             container.mount(Label('[dim]No saved threads yet.[/dim]'))
         else:
-            for meta in threads:
-                container.mount(ThreadListItem(meta))
+            container.mount_all([ThreadListItem(meta) for meta in threads])
             container.scroll_end(animate=False)
 
     # -- launch ---------------------------------------------------------------
