@@ -190,7 +190,7 @@ class FollowupThreadPool:
         for tid in active_to_close:
             await self.hide_thread(tid)
         self._store.delete_by_anchor_id(anchor_id)
-        self._tutor_store.delete(anchor_id)
+        await self._tutor_store.delete_async(anchor_id)
         self._sink.on_thread_list(self.list_threads())
         self._sink.on_tutor_entry_removed(anchor_id)
 
@@ -295,7 +295,7 @@ class FollowupThreadPool:
                 at.resume_session_id = None
 
         at.meta.messages.append(ThreadMessage(role='user', text=text))
-        self._store.save_thread(at.meta)
+        await self._store.save_thread_async(at.meta)
         self._log.write(f'[user] {text}\n')
 
         buf: list[str] = []
@@ -318,7 +318,7 @@ class FollowupThreadPool:
             response = ''.join(buf).strip()
             if response:
                 at.meta.messages.append(ThreadMessage(role='assistant', text=response))
-                self._store.save_thread(at.meta)
+                await self._store.save_thread_async(at.meta)
                 self._log.write(f'[assistant] {response}\n')
             self._sink.on_thread_done(at.thread_id)
 

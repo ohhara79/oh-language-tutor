@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import tempfile
@@ -17,6 +18,12 @@ class TutorStore:
         self._path: Path = path
         self._cached_entries: list[TutorEntry] | None = None
         self._cached_key: tuple[float, int] | None = None
+        self._write_lock: asyncio.Lock | None = None
+
+    def _get_write_lock(self) -> asyncio.Lock:
+        if self._write_lock is None:
+            self._write_lock = asyncio.Lock()
+        return self._write_lock
 
     def load(self) -> list[TutorEntry]:
         """Read all entries from disk.  Returns ``[]`` on missing/corrupt file.
@@ -54,6 +61,13 @@ class TutorStore:
         entries.append(entry)
         self._write(entries)
 
+    async def append_async(self, entry: TutorEntry) -> None:
+        """Async variant that runs the disk write on a worker thread."""
+        async with self._get_write_lock():
+            entries = self.load()
+            entries.append(entry)
+            await asyncio.to_thread(self._write, entries)
+
     def delete(self, anchor_id: str) -> bool:
         """Remove the entry matching *anchor_id*. Returns False if not found."""
         entries = self.load()
@@ -62,6 +76,16 @@ class TutorStore:
             return False
         self._write(kept)
         return True
+
+    async def delete_async(self, anchor_id: str) -> bool:
+        """Async variant that runs the disk write on a worker thread."""
+        async with self._get_write_lock():
+            entries = self.load()
+            kept = [e for e in entries if e.id != anchor_id]
+            if len(kept) == len(entries):
+                return False
+            await asyncio.to_thread(self._write, kept)
+            return True
 
     def index_of(self, anchor_id: str) -> int | None:
         """Return the current array position of *anchor_id*, or None."""

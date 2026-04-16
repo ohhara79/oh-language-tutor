@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import tempfile
@@ -16,6 +17,12 @@ class ThreadStore:
 
     def __init__(self, threads_dir: Path) -> None:
         self._dir: Path = threads_dir
+        self._write_lock: asyncio.Lock | None = None
+
+    def _get_write_lock(self) -> asyncio.Lock:
+        if self._write_lock is None:
+            self._write_lock = asyncio.Lock()
+        return self._write_lock
 
     def _ensure_dir(self) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -47,6 +54,11 @@ class ThreadStore:
             'messages': [{'role': m.role, 'text': m.text} for m in meta.messages],
         }
         self._write(self._path(meta.thread_id), data)
+
+    async def save_thread_async(self, meta: ThreadMeta) -> None:
+        """Async variant that runs the disk write on a worker thread."""
+        async with self._get_write_lock():
+            await asyncio.to_thread(self.save_thread, meta)
 
     def delete_thread(self, thread_id: str) -> None:
         """Remove a thread JSON file from disk."""

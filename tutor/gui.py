@@ -339,6 +339,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._delete_arming_timer: Timer | None = None
         self._thread_delete_arming_timer: Timer | None = None
         self._line_blocks: dict[str, LineBlock] = {}
+        self._pending_writes: set[asyncio.Task[None]] = set()
         # Hot widget references, populated in on_mount so click and
         # streaming handlers don't walk the ~3.7k-node DOM for each update.
         # Access before on_mount would raise AttributeError on .display etc.
@@ -386,6 +387,11 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._stream_pane.scroll_end(animate=False)
         self._thread_list_container.scroll_end(animate=False)
 
+    async def on_unmount(self) -> None:
+        """Await any outstanding async disk writes so nothing is lost on quit."""
+        if self._pending_writes:
+            await asyncio.gather(*self._pending_writes, return_exceptions=True)
+
     def _restore_tutor_entries(self) -> None:
         """Populate left pane from saved tutor.json entries."""
         if self._tutor_store is None:
@@ -424,7 +430,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             self._session_log.write('---\n')
         entry = TutorEntry(raw=raw, explanation=text)
         if self._tutor_store is not None:
-            self._tutor_store.append(entry)
+            task = asyncio.create_task(self._tutor_store.append_async(entry))
+            self._pending_writes.add(task)
+            task.add_done_callback(self._pending_writes.discard)
         self.call_later(self._apply_explanation, raw, text, entry.id)
 
     def _apply_explanation(self, raw: str, text: str, entry_id: str) -> None:
@@ -447,7 +455,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             self._streaming_label = Static('', classes='thread-msg')
             container.mount(self._streaming_label)
         self._streaming_text += chunk
-        self._streaming_label.update(_rich_md(self._streaming_text))
+        # Plain-text during streaming; _apply_thread_done re-renders as
+        # markdown once the reply completes. Avoids O(N²) markdown parses.
+        self._streaming_label.update(self._streaming_text)
         container.scroll_end(animate=False)
 
     def on_thread_done(self, thread_id: str) -> None:
