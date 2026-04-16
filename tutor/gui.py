@@ -143,6 +143,20 @@ def _rich_md(text: str) -> _CJKMarkdown:
 # ---------------------------------------------------------------------------
 
 
+class _QuickButton(Button):
+    """Button that skips the active-press animation.
+
+    Textual's default Button adds the ``-active`` CSS class on every click,
+    which triggers ``update_node_styles`` → ``stylesheet.update_nodes``.
+    Setting ``active_effect_duration`` to zero avoids the extra style-update
+    round-trips that stall the event loop in large DOMs.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.active_effect_duration: float = 0.0
+
+
 class LineBlock(Horizontal):
     """Displays a raw input line with [Ask] and [Del] buttons."""
 
@@ -162,13 +176,13 @@ class LineBlock(Horizontal):
     @override
     def compose(self) -> ComposeResult:
         yield Label(self._raw, classes='line-raw')
-        yield Button(
+        yield _QuickButton(
             'ASK',
             id=f'ask-{self._tutor_id}',
             classes='ask-btn',
             variant='primary',
         )
-        yield Button(
+        yield _QuickButton(
             'DEL',
             id=f'line-delete-{self._tutor_id}',
             classes='line-delete-btn',
@@ -198,8 +212,8 @@ class ThreadListItem(Horizontal):
             f'{anchor_short}  ({msgs} msgs, {format_created_at_utc(self._meta.created_at)})',
             classes='thread-list-label',
         )
-        yield Button('OPEN', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
-        yield Button('DEL', id=f'delete-{self._meta.thread_id}', classes='thread-delete-btn', variant='error')
+        yield _QuickButton('OPEN', id=f'reopen-{self._meta.thread_id}', classes='thread-open-btn', variant='primary')
+        yield _QuickButton('DEL', id=f'delete-{self._meta.thread_id}', classes='thread-delete-btn', variant='error')
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +338,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._thread_delete_arming_id: str | None = None
         self._delete_arming_timer: Timer | None = None
         self._thread_delete_arming_timer: Timer | None = None
+        self._line_blocks: dict[str, LineBlock] = {}
         # Hot widget references, populated in on_mount so click and
         # streaming handlers don't walk the ~3.7k-node DOM for each update.
         # Access before on_mount would raise AttributeError on .display etc.
@@ -384,7 +399,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         stream = self._stream_pane
         widgets: list[Any] = []
         for entry in entries:
-            widgets.append(LineBlock(entry.raw, entry.id))
+            lb = LineBlock(entry.raw, entry.id)
+            self._line_blocks[entry.id] = lb
+            widgets.append(lb)
             widgets.append(ExplanationBlock(entry.explanation))
         stream.mount_all(widgets)
 
@@ -413,7 +430,9 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     def _apply_explanation(self, raw: str, text: str, entry_id: str) -> None:
         stream = self._stream_pane
         at_bottom = stream.is_vertical_scroll_end
-        stream.mount_all([LineBlock(raw, entry_id), ExplanationBlock(text)])
+        lb = LineBlock(raw, entry_id)
+        self._line_blocks[entry_id] = lb
+        stream.mount_all([lb, ExplanationBlock(text)])
         if at_bottom:
             stream.scroll_end(animate=False)
 
@@ -456,22 +475,21 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
             return
         if self._delete_arming_id == anchor_id:
             self._disarm_delete()
-        stream = self._stream_pane
-        for block in list(stream.query(LineBlock)):
-            if block.tutor_id != anchor_id:
-                continue
-            siblings = list(stream.children)
-            try:
-                pos = siblings.index(block)
-            except ValueError:
-                block.remove()
-                return
-            block.remove()
-            if pos < len(siblings) - 1:
-                explanation = siblings[pos + 1]
-                if isinstance(explanation, ExplanationBlock):
-                    explanation.remove()
+        block = self._line_blocks.pop(anchor_id, None)
+        if block is None:
             return
+        stream = self._stream_pane
+        siblings = list(stream.children)
+        try:
+            pos = siblings.index(block)
+        except ValueError:
+            block.remove()
+            return
+        block.remove()
+        if pos < len(siblings) - 1:
+            explanation = siblings[pos + 1]
+            if isinstance(explanation, ExplanationBlock):
+                explanation.remove()
 
     def on_error(self, msg: str) -> None:
         if not self._screen_stack:
@@ -485,12 +503,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     # -- button handlers ------------------------------------------------------
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        # Clear the "-active" CSS class so the button is immediately
-        # reusable.  Textual removes it via a short timer, but moving
-        # focus away (e.g. to the thread input) can prevent that timer
-        # from firing, leaving the button stuck in pressed state.
-        event.button.remove_class('-active')
-
         btn_id = event.button.id or ''
         if btn_id.startswith('ask-'):
             anchor_id = btn_id.removeprefix('ask-')
@@ -586,13 +598,19 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     # -- thread management ----------------------------------------------------
 
     def _scroll_left_pane_to_anchor_id(self, anchor_id: str) -> None:
-        if not anchor_id:
-            return
-        stream = self._stream_pane
-        for block in stream.query(LineBlock):
-            if block.tutor_id == anchor_id:
-                stream.scroll_to_widget(block, animate=False)
-                return
+        """Scroll the left pane so *anchor_id* is visible.
+
+        The actual scroll is deferred via ``call_after_refresh`` so that
+        ``scroll_to_widget`` runs after the next layout pass — otherwise it
+        would force ``compositor.full_map`` to be rebuilt synchronously
+        (``reflow_visible`` sets ``_full_map_invalidated``), which lays out
+        every widget in the pane and stalls the event loop for ~1 s.
+        """
+        block = self._line_blocks.get(anchor_id)
+        if block is not None:
+            self.call_after_refresh(
+                self._stream_pane.scroll_to_widget, block, animate=False
+            )
 
     def _open_new_thread(self, anchor_id: str, anchor_raw: str = '') -> None:
         if self._current_thread_id:
