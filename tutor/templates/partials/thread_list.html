@@ -1,0 +1,16 @@
+<ul class="thread-list">
+  {% for t in threads %}
+  <li class="thread-item">
+    <a href="#"
+       hx-get="/threads/{{ t.thread_id }}"
+       hx-target="#thread-conversation"
+       hx-swap="innerHTML">
+      <span class="anchor">{{ t.anchor_raw | e }}</span>
+      <span class="count">{{ t.messages | length }} msg</span>
+      <span class="created">{{ format_created_at_utc(t.created_at) }}</span>
+    </a>
+  </li>
+  {% else %}
+  <li class="empty">No threads yet.</li>
+  {% endfor %}
+</ul>

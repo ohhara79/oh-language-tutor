@@ -9,9 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import markdown as md
-
-from tutor.markdown_util import emphasis_to_html
+from tutor.markdown_util import render_markdown
 from tutor.types import format_created_at_utc
 
 if TYPE_CHECKING:
@@ -95,11 +93,6 @@ section.orphans > h2 { font-size: 1.1rem; color: #888; }
 """
 
 
-def _render_markdown(text: str) -> str:
-    """Convert stored markdown text to an HTML fragment, CJK-safe."""
-    return md.markdown(emphasis_to_html(text), extensions=['extra', 'sane_lists'])
-
-
 def _render_thread(thread: ThreadMeta) -> str:
     when = html.escape(format_created_at_utc(thread.created_at))
     n = len(thread.messages)
@@ -111,7 +104,7 @@ def _render_thread(thread: ThreadMeta) -> str:
                 f'<div class="msg user"><span class="who">You:</span>{html.escape(m.text)}</div>',
             )
         else:
-            parts.append(f'<div class="msg assistant">{_render_markdown(m.text)}</div>')
+            parts.append(f'<div class="msg assistant">{render_markdown(m.text)}</div>')
     parts.append('</details>')
     return ''.join(parts)
 
@@ -121,7 +114,7 @@ def _render_line(entry: TutorEntry, threads: list[ThreadMeta]) -> str:
     parts.append(
         '<details class="explain">'
         f'<summary class="raw">{html.escape(entry.raw)}</summary>'
-        f'<div class="explanation-body">{_render_markdown(entry.explanation)}</div>'
+        f'<div class="explanation-body">{render_markdown(entry.explanation)}</div>'
         '</details>',
     )
     parts.extend(_render_thread(t) for t in threads)

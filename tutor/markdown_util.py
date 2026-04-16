@@ -1,8 +1,10 @@
-"""Shared markdown utilities used by both the TUI and the HTML exporter."""
+"""Shared markdown utilities used by the TUI, HTML exporter, and web UI."""
 
 from __future__ import annotations
 
 import re
+
+import markdown as md
 
 # CommonMark's emphasis rules fail when a closing ** (or *) is preceded by
 # punctuation and followed by a word character — common in CJK text where no
@@ -17,3 +19,8 @@ def emphasis_to_html(text: str) -> str:
     """Replace ``**text**`` / ``*text*`` with HTML tags before parsing."""
     text = _RE_STRONG.sub(r'<strong>\1</strong>', text)
     return _RE_EMPH.sub(r'<em>\1</em>', text)
+
+
+def render_markdown(text: str) -> str:
+    """Convert stored markdown text to an HTML fragment, CJK-safe."""
+    return md.markdown(emphasis_to_html(text), extensions=['extra', 'sane_lists'])

@@ -1,0 +1,27 @@
+<div class="thread-header">
+  <p class="anchor-raw">{{ meta.anchor_raw | e }}</p>
+  <form hx-post="/commands/delete_thread"
+        hx-confirm="Delete this thread permanently?"
+        hx-target="#thread-conversation"
+        hx-swap="innerHTML">
+    <input type="hidden" name="thread_id" value="{{ meta.thread_id }}">
+    <button type="submit" class="btn btn-del">Delete</button>
+  </form>
+</div>
+<div class="thread-messages" id="thread-messages-{{ meta.thread_id }}">
+  {% for m in meta.messages %}
+    {% if m.role == 'user' %}
+      <div class="msg user"><span class="who">You:</span>{{ m.text | e }}</div>
+    {% else %}
+      <div class="msg assistant">{{ render_markdown(m.text) | safe }}</div>
+    {% endif %}
+  {% endfor %}
+</div>
+<form class="thread-compose"
+      hx-post="/commands/send_message"
+      hx-target="#thread-messages-{{ meta.thread_id }}"
+      hx-swap="beforeend">
+  <input type="hidden" name="thread_id" value="{{ meta.thread_id }}">
+  <textarea name="text" rows="2" placeholder="Ask a follow-up..." required></textarea>
+  <button type="submit" class="btn btn-send">Send</button>
+</form>

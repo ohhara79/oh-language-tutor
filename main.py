@@ -29,6 +29,16 @@ def main() -> None:
             sys.stderr.write('[oh-language-tutor] --gui requires textual. Install it with: uv add textual\n')
             sys.exit(1)
         runner = run_gui
+    elif args.web:
+        try:
+            from tutor.web import run_web  # noqa: PLC0415
+        except ImportError:
+            sys.stderr.write(
+                '[oh-language-tutor] --web requires fastapi, uvicorn, jinja2. '
+                'Install them with: uv add fastapi uvicorn jinja2\n',
+            )
+            sys.exit(1)
+        runner = run_web
     try:
         rc = asyncio.run(runner(args))
     except KeyboardInterrupt:

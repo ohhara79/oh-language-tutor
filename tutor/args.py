@@ -71,4 +71,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action='store_true',
         help='Launch the interactive Textual TUI instead of plain terminal output.',
     )
-    return p.parse_args(argv)
+    p.add_argument(
+        '--web',
+        action='store_true',
+        help='Launch the browser UI (FastAPI server) instead of plain terminal output.',
+    )
+    p.add_argument(
+        '--web-host',
+        default='127.0.0.1',
+        help='Web UI bind address (default: %(default)s).',
+    )
+    p.add_argument(
+        '--web-port',
+        default=8000,
+        type=int,
+        help='Web UI bind port (default: %(default)s).',
+    )
+    args = p.parse_args(argv)
+    if args.gui and args.web:
+        p.error('--gui and --web are mutually exclusive')
+    return args

@@ -618,9 +618,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         """
         block = self._line_blocks.get(anchor_id)
         if block is not None:
-            self.call_after_refresh(
-                self._stream_pane.scroll_to_widget, block, animate=False
-            )
+            self.call_after_refresh(self._stream_pane.scroll_to_widget, block, animate=False)
 
     def _open_new_thread(self, anchor_id: str, anchor_raw: str = '') -> None:
         if self._current_thread_id:
