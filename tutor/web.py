@@ -28,7 +28,7 @@ from tutor.session import load_saved_session_id
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore
 from tutor.tutor_store import TutorStore
-from tutor.types import format_created_at_utc
+from tutor.types import ThreadMeta, format_created_at_utc
 from tutor.web_sink import WebSink
 
 if TYPE_CHECKING:
@@ -60,6 +60,23 @@ class WebContext:
     version: str  # cache-buster for static assets
 
 
+def thread_heading(meta: ThreadMeta) -> str:
+    """Pick the one-line heading shown for a thread in the thread list.
+
+    Uses the thread's first user message, so threads sharing an anchor line are
+    distinguishable. Falls back to ``anchor_raw`` for a just-opened thread that
+    has not received a user message yet.
+    """
+    for m in meta.messages:
+        if m.role == 'user':
+            for line in m.text.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    return stripped
+            break
+    return meta.anchor_raw
+
+
 def build_template_env() -> Environment:
     """Construct the Jinja2 environment used by both initial render and SSE fragments."""
     env = Environment(
@@ -69,6 +86,7 @@ def build_template_env() -> Environment:
     globals_: dict[str, Any] = env.globals
     globals_['render_markdown'] = render_markdown
     globals_['format_created_at_utc'] = format_created_at_utc
+    globals_['thread_heading'] = thread_heading
     return env
 
 
