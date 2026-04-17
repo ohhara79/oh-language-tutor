@@ -16,7 +16,7 @@
 
   <button type="button" id="back-btn" class="btn">&larr; Back</button>
 
-  <main id="stream-pane" sse-swap="explanation,raw_line" hx-swap="beforeend">
+  <main id="stream-pane" sse-swap="explanation" hx-swap="beforeend">
     {% for entry in entries %}
       {% set raw_escaped = entry.raw | e %}
       {% set explanation_html = render_markdown(entry.explanation) %}

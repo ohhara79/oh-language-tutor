@@ -23,15 +23,6 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 
 /* ---------- Stream / raw lines ---------- */
 
-.raw-line {
-    color: #888;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.85rem;
-    padding: 0.2rem 0.5rem;
-    white-space: pre-wrap;
-    opacity: 0.6;
-}
-
 .line {
     border-top: 1px solid #ddd;
     padding: 0.25rem 0;
@@ -235,7 +226,6 @@ body.view-line .line { display: none; }
 body.view-line .line.active { display: block; }
 body.view-line .line.active .line-detail { display: block; }
 body.view-line .line.active .raw-toggle { font-weight: 600; cursor: default; }
-body.view-line .raw-line { display: none; }
 body.view-line #orphan-threads-section,
 body.view-line #thread-conversation { display: none; }
 
@@ -261,7 +251,6 @@ body.view-thread #thread-conversation { display: flex; }
     .thread-list li.thread-item a:hover { border-color: #555; }
     .thread-conversation { border-color: #444; }
     .thread-header { border-color: #444; }
-    .raw-line { color: #888; }
     .thread-compose { background: #1a1a1a; }
     .raw-toggle:hover { background: rgba(255, 255, 255, 0.05); }
 }

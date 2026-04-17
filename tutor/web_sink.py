@@ -64,8 +64,6 @@ class WebSink:
 
     def on_raw_line(self, raw: str) -> None:
         self._log.write(raw + '\n')
-        fragment = f'<div class="raw-line">{html.escape(raw)}</div>'
-        self._broadcast('raw_line', fragment)
 
     def on_explanation(self, raw: str, text: str) -> None:
         entry = TutorEntry(raw=raw, explanation=text)
