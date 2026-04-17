@@ -7,10 +7,8 @@ import contextlib
 import os
 import re
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast, override
-from uuid import uuid4
 
 from claude_agent_sdk import ClaudeAgentOptions
 from markdown_it.token import Token
@@ -27,7 +25,7 @@ from tutor.prompts import build_system_prompt
 from tutor.replay import connect_with_fallback
 from tutor.session import load_saved_session_id
 from tutor.thread_pool import FollowupThreadPool
-from tutor.thread_store import ThreadStore
+from tutor.thread_store import ThreadStore, new_thread_id
 from tutor.tutor_store import TutorStore
 from tutor.types import (
     Cmd,
@@ -624,8 +622,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         if self._current_thread_id:
             self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
 
-        ts = datetime.now(UTC).strftime('%Y%m%d%H%M%S')
-        tid = f'tutor_thread_{ts}_{uuid4().hex[:8]}'
+        tid = new_thread_id()
         self._current_thread_id = tid
         self._thread_view_mode = 'conversation'
         self._cmd_queue.put_nowait(OpenThreadCmd(thread_id=tid, anchor_id=anchor_id))

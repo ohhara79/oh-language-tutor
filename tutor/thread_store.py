@@ -6,10 +6,23 @@ import asyncio
 import json
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from tutor.types import ThreadMessage, ThreadMeta
+
+
+def new_thread_id() -> str:
+    """Generate a new thread id in the canonical ``tutor_thread_<UTC>_<hex>`` form.
+
+    The sortable UTC timestamp prefix (``YYYYMMDDHHMMSS``) means thread files on
+    disk list in chronological order; the 8-char hex suffix prevents collisions
+    within the same second.
+    """
+    ts = datetime.now(UTC).strftime('%Y%m%d%H%M%S')
+    return f'tutor_thread_{ts}_{uuid4().hex[:8]}'
 
 
 class ThreadStore:

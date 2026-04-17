@@ -11,7 +11,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
-from uuid import uuid4
 
 import uvicorn
 from claude_agent_sdk import ClaudeAgentOptions
@@ -26,7 +25,7 @@ from tutor.prompts import build_system_prompt
 from tutor.replay import connect_with_fallback
 from tutor.session import load_saved_session_id
 from tutor.thread_pool import FollowupThreadPool
-from tutor.thread_store import ThreadStore
+from tutor.thread_store import ThreadStore, new_thread_id
 from tutor.tutor_store import TutorStore
 from tutor.types import ThreadMeta, format_created_at_utc
 from tutor.web_sink import WebSink
@@ -163,7 +162,7 @@ def build_app(ctx: WebContext) -> FastAPI:
     async def open_thread(  # pyright: ignore[reportUnusedFunction]
         anchor_id: Annotated[str, Form()],
     ) -> HTMLResponse:
-        thread_id = uuid4().hex
+        thread_id = new_thread_id()
         await ctx.pool.open_thread(thread_id, anchor_id)
         meta = ctx.pool.peek_meta(thread_id)
         if meta is None:
