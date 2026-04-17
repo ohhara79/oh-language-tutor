@@ -82,8 +82,13 @@ class OutputSink(Protocol):
         """A streaming text chunk arrived from a followup thread response."""
         ...
 
-    def on_thread_done(self, thread_id: str) -> None:
-        """A followup thread response finished streaming."""
+    def on_thread_done(self, thread_id: str, last_assistant: str) -> None:
+        """A followup thread response finished streaming.
+
+        ``last_assistant`` is the full assistant text that was just persisted
+        (may be empty on error paths). Sinks that rendered raw streaming
+        chunks in place use it to swap in a properly-formatted replacement.
+        """
         ...
 
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:

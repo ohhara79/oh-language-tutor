@@ -86,14 +86,14 @@ class WebSink:
         fragment = f'<span hx-swap-oob="beforeend:#msg-stream-{html.escape(thread_id)}">{html.escape(chunk)}</span>'
         self._broadcast('thread_chunk', fragment)
 
-    def on_thread_done(self, thread_id: str) -> None:
-        # The final assistant text is what the pool just appended to meta.messages.
-        # For the OOB replace we render the last assistant message as markdown.
-        # The web app's send_message handler separately re-renders the conversation;
-        # we broadcast a minimal replacement that clears the streaming span and lets
-        # a subsequent thread_list broadcast refresh the sidebar count.
+    def on_thread_done(self, thread_id: str, last_assistant: str) -> None:
+        # Replace the streamed span container with a properly-rendered
+        # .msg.assistant div. If there's no text (connect failure etc.) emit
+        # an empty placeholder so the streamed ghost (if any) is still cleared.
+        rendered = render_markdown(last_assistant) if last_assistant else ''
         fragment = (
-            f'<div id="msg-stream-{html.escape(thread_id)}" class="msg-stream done" hx-swap-oob="outerHTML"></div>'
+            f'<div id="msg-stream-{html.escape(thread_id)}" '
+            f'class="msg assistant" hx-swap-oob="outerHTML">{rendered}</div>'
         )
         self._broadcast('thread_done', fragment)
 

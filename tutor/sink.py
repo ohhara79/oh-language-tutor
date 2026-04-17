@@ -49,7 +49,7 @@ class TerminalSink:
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
         pass  # terminal mode does not display thread conversations
 
-    def on_thread_done(self, thread_id: str) -> None:
+    def on_thread_done(self, thread_id: str, last_assistant: str) -> None:
         pass
 
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:

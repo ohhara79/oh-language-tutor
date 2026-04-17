@@ -460,7 +460,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._streaming_label.update(self._streaming_text)
         container.scroll_end(animate=False)
 
-    def on_thread_done(self, thread_id: str) -> None:
+    def on_thread_done(self, thread_id: str, last_assistant: str) -> None:  # noqa: ARG002
         self.call_later(self._apply_thread_done, thread_id)
 
     def _apply_thread_done(self, thread_id: str) -> None:

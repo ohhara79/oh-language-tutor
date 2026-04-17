@@ -270,7 +270,8 @@ class FollowupThreadPool:
             except Exception as exc:  # noqa: BLE001
                 if at.resume_session_id is None:
                     self._sink.on_error(f'failed to connect thread {at.thread_id}: {exc}')
-                    self._sink.on_thread_done(at.thread_id)
+                    self._sink.on_thread_list(self._store.list_threads())
+                    self._sink.on_thread_done(at.thread_id, '')
                     return
                 # Resume failed — start a fresh session and replay the thread's
                 # prior turns as a preamble so Claude has context.
@@ -278,7 +279,8 @@ class FollowupThreadPool:
                     at.client = await self._connect('', None)
                 except Exception as retry_exc:  # noqa: BLE001
                     self._sink.on_error(f'failed to connect thread {at.thread_id}: {retry_exc}')
-                    self._sink.on_thread_done(at.thread_id)
+                    self._sink.on_thread_list(self._store.list_threads())
+                    self._sink.on_thread_done(at.thread_id, '')
                     return
                 all_pairs = pairs_from_thread(at.meta.messages)
                 pairs = all_pairs[-REPLAY_MAX_TURNS:]
@@ -289,7 +291,8 @@ class FollowupThreadPool:
                             pass
                     except Exception as seed_exc:  # noqa: BLE001
                         self._sink.on_error(f'thread replay failed: {seed_exc}')
-                        self._sink.on_thread_done(at.thread_id)
+                        self._sink.on_thread_list(self._store.list_threads())
+                        self._sink.on_thread_done(at.thread_id, '')
                         return
                 notify_fallback(self._log, self._sink, total=len(all_pairs), replayed=len(pairs))
                 at.resume_session_id = None
@@ -297,6 +300,7 @@ class FollowupThreadPool:
         at.meta.messages.append(ThreadMessage(role='user', text=text))
         await self._store.save_thread_async(at.meta)
         self._log.write(f'[user] {text}\n')
+        self._sink.on_thread_list(self._store.list_threads())
 
         buf: list[str] = []
         try:
@@ -320,7 +324,8 @@ class FollowupThreadPool:
                 at.meta.messages.append(ThreadMessage(role='assistant', text=response))
                 await self._store.save_thread_async(at.meta)
                 self._log.write(f'[assistant] {response}\n')
-            self._sink.on_thread_done(at.thread_id)
+                self._sink.on_thread_list(self._store.list_threads())
+            self._sink.on_thread_done(at.thread_id, response)
 
     @staticmethod
     async def _disconnect(client: ClaudeSDKClient) -> None:
