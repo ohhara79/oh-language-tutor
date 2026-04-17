@@ -191,4 +191,25 @@
             setTimeout(() => t.remove(), 5000);
         }
     });
+
+    // Enter submits the compose form; Shift+Enter inserts a newline.
+    // IME composition (e.g. Korean jamo -> hangul) must not trigger submit.
+    document.body.addEventListener('keydown', (e) => {
+        if (!(e.target instanceof HTMLTextAreaElement)) return;
+        const form = e.target.closest('form.thread-compose');
+        if (!form) return;
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        form.requestSubmit();
+    });
+
+    // Clear the compose textarea after a successful send.
+    document.body.addEventListener('htmx:afterRequest', (evt) => {
+        const form = evt.target && evt.target.closest && evt.target.closest('form.thread-compose');
+        if (!form) return;
+        if (!evt.detail || !evt.detail.successful) return;
+        const ta = form.querySelector('textarea[name="text"]');
+        if (ta) ta.value = '';
+    });
 })();
