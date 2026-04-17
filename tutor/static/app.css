@@ -2,8 +2,9 @@
 
 body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    margin: 0;
-    padding: 0 1rem 1rem;
+    margin: 0 auto;
+    max-width: 44rem;
+    padding: 0 1rem 5rem;
     line-height: 1.55;
 }
 
@@ -15,84 +16,93 @@ header {
 header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .meta { color: #888; font-size: 0.85rem; margin: 0; }
 
-.layout {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    gap: 1.5rem;
-    align-items: start;
+#back-btn {
+    display: none;
+    margin: 0 0 0.75rem;
 }
 
-@media (max-width: 900px) {
-    .layout { grid-template-columns: 1fr; }
-}
-
-#stream-pane {
-    max-height: calc(100vh - 6rem);
-    overflow-y: auto;
-    padding-right: 0.5rem;
-}
-
-.sidebar {
-    position: sticky;
-    top: 0.5rem;
-    max-height: calc(100vh - 6rem);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.sidebar h2 { font-size: 0.95rem; margin: 0 0 0.5rem; color: #666; }
+/* ---------- Stream / raw lines ---------- */
 
 .raw-line {
     color: #888;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.8rem;
-    padding: 0.1rem 0;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
     white-space: pre-wrap;
     opacity: 0.6;
 }
 
 .line {
     border-top: 1px solid #ddd;
-    padding: 0.5rem 0;
+    padding: 0.25rem 0;
 }
 .line:first-child { border-top: none; }
 
-details.explain > summary.raw {
+.raw-toggle {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0.75rem 0.5rem;
+    margin: 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.9rem;
-    color: #333;
-    white-space: pre-wrap;
+    font-size: 1rem;
+    line-height: 1.45;
+    color: inherit;
     cursor: pointer;
-    list-style: revert;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 44px;
 }
-details.explain[open] > summary.raw { margin-bottom: 0.5rem; color: #666; }
+.raw-toggle:hover { background: rgba(128, 128, 128, 0.08); }
+.raw-toggle:focus-visible { outline: 2px solid #8ab; outline-offset: -2px; }
 
-.explanation-body { margin: 0 0 0.25rem 1.25rem; }
+.line-detail { padding: 0.25rem 0.25rem 0.75rem; }
+.explanation-body { margin: 0 0 0.5rem; }
 .explanation-body :first-child { margin-top: 0; }
 .explanation-body :last-child { margin-bottom: 0; }
 
+.line-threads { margin: 0.5rem 0; }
+.line-threads .empty { color: #888; font-style: italic; font-size: 0.9rem; margin: 0.25rem 0; }
+
 .line-actions {
-    margin: 0.35rem 0 0.25rem 1.25rem;
+    margin: 0.5rem 0 0;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 .line-actions form { margin: 0; }
 
+/* ---------- Buttons ---------- */
+
 .btn {
     font: inherit;
-    font-size: 0.8rem;
-    padding: 0.2rem 0.6rem;
+    font-size: 1rem;
+    padding: 0.5rem 1rem;
+    min-height: 44px;
     border: 1px solid #bbb;
-    border-radius: 3px;
+    border-radius: 4px;
     background: rgba(128, 128, 128, 0.1);
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .btn:hover { background: rgba(128, 128, 128, 0.2); }
+.btn:focus-visible { outline: 2px solid #8ab; outline-offset: 1px; }
 .btn-del { color: #a33; border-color: #c88; }
 .btn-ask { color: #0b6bcb; border-color: #8ab; }
-.btn-send { margin-top: 0.35rem; }
+.btn-send { margin-top: 0.5rem; }
+
+/* ---------- Thread list ---------- */
+
+#thread-list-section { margin-top: 1.5rem; }
+#thread-list-section h2 {
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+    color: #666;
+}
 
 .thread-list {
     list-style: none;
@@ -100,9 +110,12 @@ details.explain[open] > summary.raw { margin-bottom: 0.5rem; color: #666; }
     margin: 0;
 }
 .thread-list li.thread-item a {
-    display: block;
-    padding: 0.4rem 0.5rem;
-    border-radius: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.75rem;
+    min-height: 44px;
+    border-radius: 4px;
     color: inherit;
     text-decoration: none;
     border: 1px solid transparent;
@@ -111,10 +124,11 @@ details.explain[open] > summary.raw { margin-bottom: 0.5rem; color: #666; }
 .thread-list .anchor {
     display: block;
     font-family: ui-monospace, monospace;
-    font-size: 0.85rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 0.9rem;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
 }
 .thread-list .count, .thread-list .created {
     font-size: 0.75rem;
@@ -122,6 +136,8 @@ details.explain[open] > summary.raw { margin-bottom: 0.5rem; color: #666; }
     margin-right: 0.5rem;
 }
 .thread-list li.empty { color: #888; font-style: italic; padding: 0.5rem; }
+
+/* ---------- Thread conversation ---------- */
 
 .thread-conversation {
     border: 1px solid #ccc;
@@ -143,10 +159,11 @@ details.explain[open] > summary.raw { margin-bottom: 0.5rem; color: #666; }
 }
 .anchor-raw {
     font-family: ui-monospace, monospace;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     color: #555;
     margin: 0;
     white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .msg { margin: 0.25rem 0; }
@@ -156,19 +173,36 @@ details.explain[open] > summary.raw { margin-bottom: 0.5rem; color: #666; }
 .msg.assistant :first-child { margin-top: 0; }
 .msg.assistant :last-child { margin-bottom: 0; }
 
+.thread-compose {
+    position: sticky;
+    bottom: 0;
+    background: Canvas;
+    padding-top: 0.5rem;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
 .thread-compose textarea {
     width: 100%;
     box-sizing: border-box;
     font: inherit;
-    padding: 0.3rem;
+    font-size: 1rem;
+    padding: 0.75rem;
+    min-height: 88px;
     border: 1px solid #bbb;
-    border-radius: 3px;
+    border-radius: 4px;
+    resize: vertical;
 }
+
+/* ---------- Inline markdown ---------- */
 
 code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; }
 pre { background: rgba(128, 128, 128, 0.08); padding: 0.5rem 0.75rem; border-radius: 4px; overflow-x: auto; }
 pre code { background: none; padding: 0; }
 blockquote { border-left: 3px solid rgba(128, 128, 128, 0.3); margin: 0.5rem 0; padding: 0 0.75rem; color: #555; }
+
+/* ---------- Toasts ---------- */
 
 #toast-container {
     position: fixed;
@@ -191,13 +225,35 @@ blockquote { border-left: 3px solid rgba(128, 128, 128, 0.3); margin: 0.5rem 0; 
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(-10px); } }
 
+/* ---------- View states ---------- */
+
+/* Default: list view */
+body.view-list .line .line-detail { display: none; }
+body.view-list #thread-conversation { display: none; }
+
+/* Line-detail view: only the active .line is shown, with its detail expanded. */
+body.view-line #back-btn { display: inline-flex; }
+body.view-line .line { display: none; }
+body.view-line .line.active { display: block; }
+body.view-line .line.active .line-detail { display: block; }
+body.view-line .line.active .raw-toggle { font-weight: 600; cursor: default; }
+body.view-line .raw-line { display: none; }
+body.view-line #thread-list-section,
+body.view-line #thread-conversation { display: none; }
+
+/* Thread-detail view: only the conversation is shown. */
+body.view-thread #back-btn { display: inline-flex; }
+body.view-thread #stream-pane,
+body.view-thread #thread-list-section { display: none; }
+body.view-thread #thread-conversation { display: flex; }
+
+/* ---------- Dark mode ---------- */
+
 @media (prefers-color-scheme: dark) {
     body { background: #1a1a1a; color: #eee; }
     header { border-color: #444; }
     .line { border-color: #333; }
-    .sidebar h2 { color: #aaa; }
-    details.explain > summary.raw { color: #ddd; }
-    details.explain[open] > summary.raw { color: #aaa; }
+    #thread-list-section h2 { color: #aaa; }
     .msg.user { color: #6ab0ff; }
     .anchor-raw { color: #bbb; }
     blockquote { color: #bbb; }
@@ -208,4 +264,6 @@ blockquote { border-left: 3px solid rgba(128, 128, 128, 0.3); margin: 0.5rem 0; 
     .thread-conversation { border-color: #444; }
     .thread-header { border-color: #444; }
     .raw-line { color: #888; }
+    .thread-compose { background: #1a1a1a; }
+    .raw-toggle:hover { background: rgba(255, 255, 255, 0.05); }
 }

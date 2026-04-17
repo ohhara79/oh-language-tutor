@@ -1,6 +1,6 @@
 <ul class="thread-list">
   {% for t in threads %}
-  <li class="thread-item">
+  <li class="thread-item" data-anchor-id="{{ t.anchor_id }}">
     <a href="#"
        hx-get="/threads/{{ t.thread_id }}"
        hx-target="#thread-conversation"

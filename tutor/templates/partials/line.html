@@ -1,20 +1,21 @@
-<section class="line" id="line-{{ entry.id }}">
-  <details class="explain">
-    <summary class="raw">{{ raw_escaped | safe }}</summary>
+<section class="line" id="line-{{ entry.id }}" data-anchor-id="{{ entry.id }}">
+  <button type="button" class="raw-toggle">{{ raw_escaped | safe }}</button>
+  <div class="line-detail">
     <div class="explanation-body">{{ explanation_html | safe }}</div>
-  </details>
-  <div class="line-actions">
-    <form hx-post="/commands/open_thread"
-          hx-target="#thread-conversation"
-          hx-swap="innerHTML">
-      <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-      <button type="submit" class="btn btn-ask">Ask</button>
-    </form>
-    <form hx-post="/commands/delete_tutor_entry"
-          hx-confirm="Delete this line and its threads?"
-          hx-swap="none">
-      <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-      <button type="submit" class="btn btn-del">Delete</button>
-    </form>
+    <div class="line-threads" data-anchor-id="{{ entry.id }}"></div>
+    <div class="line-actions">
+      <form hx-post="/commands/open_thread"
+            hx-target="#thread-conversation"
+            hx-swap="innerHTML">
+        <input type="hidden" name="anchor_id" value="{{ entry.id }}">
+        <button type="submit" class="btn btn-ask">Ask</button>
+      </form>
+      <form hx-post="/commands/delete_tutor_entry"
+            hx-confirm="Delete this line and its threads?"
+            hx-swap="none">
+        <input type="hidden" name="anchor_id" value="{{ entry.id }}">
+        <button type="submit" class="btn btn-del">Delete</button>
+      </form>
+    </div>
   </div>
 </section>
