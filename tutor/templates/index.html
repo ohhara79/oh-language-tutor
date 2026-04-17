@@ -24,11 +24,13 @@
     {% endfor %}
   </main>
 
-  <section id="thread-list-section">
-    <h2>Threads</h2>
-    <div id="thread-list" sse-swap="thread_list" hx-swap="innerHTML">
-      {% include 'partials/thread_list.html' %}
-    </div>
+  <div id="thread-list" sse-swap="thread_list" hx-swap="innerHTML" style="display:none">
+    {% include 'partials/thread_list.html' %}
+  </div>
+
+  <section id="orphan-threads-section">
+    <h2>Other threads</h2>
+    <div id="orphan-threads"></div>
   </section>
 
   <section id="thread-conversation" class="thread-conversation">

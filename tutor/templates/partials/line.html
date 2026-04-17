@@ -1,8 +1,8 @@
 <section class="line" id="line-{{ entry.id }}" data-anchor-id="{{ entry.id }}">
   <button type="button" class="raw-toggle">{{ raw_escaped | safe }}</button>
+  <div class="line-threads" data-anchor-id="{{ entry.id }}"></div>
   <div class="line-detail">
     <div class="explanation-body">{{ explanation_html | safe }}</div>
-    <div class="line-threads" data-anchor-id="{{ entry.id }}"></div>
     <div class="line-actions">
       <form hx-post="/commands/open_thread"
             hx-target="#thread-conversation"

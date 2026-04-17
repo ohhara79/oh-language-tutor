@@ -24,7 +24,6 @@
             const line = document.querySelector(`.line[data-anchor-id="${CSS.escape(c.anchorId)}"]`);
             if (line) {
                 line.classList.add('active');
-                populateLineThreads(line, c.anchorId);
             }
             window.scrollTo(0, 0);
         } else if (c.view === 'thread') {
@@ -82,12 +81,15 @@
         if (!t || !t.id) return;
 
         if (t.id === 'thread-list') {
-            // Re-populate the active line's per-line thread sublist if we're
-            // in line-detail view so SSE-driven updates are reflected.
-            if (current().view === 'line') {
-                const active = document.querySelector('.line.active');
-                if (active) populateLineThreads(active, current().anchorId);
-            }
+            // SSE replaced the hidden source; redistribute to lines + orphans.
+            distributeThreads();
+            return;
+        }
+
+        if (t.id === 'stream-pane') {
+            // A new line appeared (explanation SSE); its empty .line-threads
+            // may now match an existing orphan thread.
+            distributeThreads();
             return;
         }
 
@@ -113,37 +115,61 @@
         }
     });
 
-    // Populate a line's per-line thread list by cloning matching items from
-    // the global #thread-list. Keeps the UI reactive to SSE updates of the
-    // global list without needing a new backend endpoint.
-    function populateLineThreads(lineEl, anchorId) {
-        const container = lineEl.querySelector('.line-threads');
-        if (!container) return;
-        container.innerHTML = '';
-        const matches = document.querySelectorAll(
-            `#thread-list .thread-item[data-anchor-id="${CSS.escape(anchorId)}"]`,
-        );
-        const heading = document.createElement('div');
-        heading.className = 'line-threads-heading';
-        heading.style.fontSize = '0.9rem';
-        heading.style.color = '#888';
-        heading.style.margin = '0.5rem 0 0.25rem';
-        heading.textContent = `Threads (${matches.length})`;
-        container.appendChild(heading);
+    // Distribute threads from the hidden #thread-list source into per-line
+    // .line-threads containers (by data-anchor-id) and push unmatched ones
+    // into #orphan-threads. Called on load and after every thread_list /
+    // stream-pane SSE swap.
+    function distributeThreads() {
+        const source = document.getElementById('thread-list');
+        if (!source) return;
+        const items = Array.from(source.querySelectorAll('.thread-item'));
 
-        if (matches.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'empty';
-            empty.textContent = 'No threads for this line yet.';
-            container.appendChild(empty);
-            return;
+        document.querySelectorAll('.line-threads').forEach((c) => {
+            c.innerHTML = '';
+        });
+
+        const grouped = new Map();
+        const orphans = [];
+        for (const li of items) {
+            const aid = li.dataset.anchorId || '';
+            const line = aid
+                ? document.querySelector(`.line[data-anchor-id="${CSS.escape(aid)}"]`)
+                : null;
+            if (line) {
+                if (!grouped.has(aid)) grouped.set(aid, []);
+                grouped.get(aid).push(li);
+            } else {
+                orphans.push(li);
+            }
         }
-        const ul = document.createElement('ul');
-        ul.className = 'thread-list';
-        matches.forEach((li) => { ul.appendChild(li.cloneNode(true)); });
-        container.appendChild(ul);
-        if (window.htmx) window.htmx.process(container);
+
+        for (const [aid, list] of grouped) {
+            const line = document.querySelector(`.line[data-anchor-id="${CSS.escape(aid)}"]`);
+            if (!line) continue;
+            const container = line.querySelector('.line-threads');
+            if (!container) continue;
+            const ul = document.createElement('ul');
+            ul.className = 'thread-list';
+            list.forEach((li) => { ul.appendChild(li.cloneNode(true)); });
+            container.appendChild(ul);
+            if (window.htmx) window.htmx.process(container);
+        }
+
+        const orphanContainer = document.getElementById('orphan-threads');
+        if (orphanContainer) {
+            orphanContainer.innerHTML = '';
+            if (orphans.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'thread-list';
+                orphans.forEach((li) => { ul.appendChild(li.cloneNode(true)); });
+                orphanContainer.appendChild(ul);
+                if (window.htmx) window.htmx.process(orphanContainer);
+            }
+        }
     }
+
+    // Initial distribution after DOM parsed.
+    distributeThreads();
 
     // Auto-scroll the page when new stream entries arrive in list view.
     new MutationObserver(() => {
