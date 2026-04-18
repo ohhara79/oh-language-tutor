@@ -19,7 +19,6 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
 from textual.widgets import Button, Footer, Header, Input, Label, Static
 
-from tutor.html_export import export_to_html
 from tutor.markdown_util import emphasis_to_html
 from tutor.prompts import build_system_prompt
 from tutor.replay import connect_with_fallback
@@ -305,7 +304,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
     CSS: ClassVar[str] = _APP_CSS
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [  # pyright: ignore[reportIncompatibleVariableOverride]
         ('escape', 'hide_thread', 'Hide thread'),
-        ('ctrl+e', 'export_html', 'Export HTML'),
         ('q', 'quit', 'Quit'),
     ]
 
@@ -691,18 +689,6 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         inp.value = ''
         inp.focus()
         self._scroll_left_pane_to_anchor_id(meta.anchor_id)
-
-    def action_export_html(self) -> None:
-        if self._tutor_store is None or self._thread_store is None or self._state_dir is None:
-            return
-        out = self._state_dir / 'tutor.html'
-        status = self._status_bar
-        try:
-            export_to_html(self._tutor_store, self._thread_store, out)
-        except OSError as exc:
-            status.update(f'Export failed: {exc}')
-            return
-        status.update(f'Exported to {out}')
 
     def action_hide_thread(self) -> None:
         # Toggle to the list view but keep the backend thread (and any
