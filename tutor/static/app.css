@@ -216,18 +216,11 @@ blockquote { border-left: 3px solid rgba(128, 128, 128, 0.3); margin: 0.5rem 0; 
 
 /* ---------- View states ---------- */
 
-/* Default: list view */
-body.view-list .line .line-detail { display: none; }
+/* Default: list view. A tapped .line gets .active, which inline-expands its
+   .line-detail panel; other lines stay collapsed. */
+body.view-list .line:not(.active) .line-detail { display: none; }
+body.view-list .line.active .raw-toggle { font-weight: 600; }
 body.view-list #thread-conversation { display: none; }
-
-/* Line-detail view: only the active .line is shown, with its detail expanded. */
-body.view-line #back-btn { display: inline-flex; }
-body.view-line .line { display: none; }
-body.view-line .line.active { display: block; }
-body.view-line .line.active .line-detail { display: block; }
-body.view-line .line.active .raw-toggle { font-weight: 600; cursor: default; }
-body.view-line #orphan-threads-section,
-body.view-line #thread-conversation { display: none; }
 
 /* Thread-detail view: only the conversation is shown. */
 body.view-thread #back-btn { display: inline-flex; }

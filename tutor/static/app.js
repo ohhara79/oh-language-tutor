@@ -1,7 +1,8 @@
-// Three-view navigation controller: list / line-detail / thread-detail.
-// The three views are gated by a body class; this module maintains a stack
-// of {view, anchorId?} entries, syncs with browser history, and wires up
-// tap handlers + HTMX afterSwap integration.
+// Two-view navigation controller: list / thread-detail.
+// The views are gated by a body class; this module maintains a stack of
+// {view} entries, syncs with browser history, and wires up tap handlers +
+// HTMX afterSwap integration. In list view, a raw-text tap toggles a
+// `.line.active` class to inline-expand that line's explanation panel.
 (function () {
     'use strict';
 
@@ -13,20 +14,10 @@
 
     function render() {
         const c = current();
-        body.classList.remove('view-list', 'view-line', 'view-thread');
+        body.classList.remove('view-list', 'view-thread');
         body.classList.add(`view-${c.view}`);
 
-        document.querySelectorAll('.line.active').forEach((el) => {
-            el.classList.remove('active');
-        });
-
-        if (c.view === 'line') {
-            const line = document.querySelector(`.line[data-anchor-id="${CSS.escape(c.anchorId)}"]`);
-            if (line) {
-                line.classList.add('active');
-            }
-            window.scrollTo(0, 0);
-        } else if (c.view === 'thread') {
+        if (c.view === 'thread') {
             window.scrollTo(0, 0);
             const convo = document.getElementById('thread-conversation');
             convo.scrollTop = convo.scrollHeight;
@@ -63,16 +54,20 @@
         history.back();
     });
 
-    // Tap a raw-line toggle in list view -> line-detail.
+    // Tap a raw-line toggle in list view -> inline-expand that line's detail.
+    // Clicking a different line collapses the previous one; clicking the same
+    // line again collapses it (toggle).
     document.getElementById('stream-pane').addEventListener('click', (e) => {
         if (current().view !== 'list') return;
         const toggle = e.target.closest('.raw-toggle');
         if (!toggle) return;
         const line = toggle.closest('.line');
         if (!line) return;
-        const anchorId = line.dataset.anchorId;
-        if (!anchorId) return;
-        push('line', {anchorId});
+        const wasActive = line.classList.contains('active');
+        document.querySelectorAll('.line.active').forEach((el) => {
+            el.classList.remove('active');
+        });
+        if (!wasActive) line.classList.add('active');
     });
 
     // HTMX swap integration.
@@ -103,9 +98,7 @@
                 if (current().view !== 'thread') {
                     push('thread');
                 } else {
-                    // Already in thread view (e.g. tapped a different thread in a
-                    // per-line list from line-detail, but we never got there since
-                    // tapping navigates from line to thread). Simply re-pin scroll.
+                    // Already in thread view -> re-pin scroll to bottom.
                     t.scrollTop = t.scrollHeight;
                 }
                 const ta = t.querySelector('form.thread-compose textarea[name="text"]');
