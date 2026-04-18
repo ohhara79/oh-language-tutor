@@ -171,17 +171,31 @@
     // Initial distribution after DOM parsed.
     distributeThreads();
 
-    // Auto-scroll the page when new stream entries arrive in list view.
+    // Sticky-bottom auto-scroll: only follow new content if the user was
+    // already at (or within NEAR_BOTTOM_PX of) the page bottom. Scrolling up
+    // pauses auto-scroll; scrolling back to the bottom resumes it.
+    const NEAR_BOTTOM_PX = 32;
+    function isWindowAtBottom() {
+        return window.innerHeight + window.scrollY >= document.body.scrollHeight - NEAR_BOTTOM_PX;
+    }
+    let wasAtBottom = true;
+    window.addEventListener('scroll', () => {
+        wasAtBottom = isWindowAtBottom();
+    }, {passive: true});
+    document.addEventListener('DOMContentLoaded', () => {
+        wasAtBottom = isWindowAtBottom();
+    });
+
     new MutationObserver(() => {
-        if (current().view === 'list') {
-            window.scrollTo(0, document.body.scrollHeight);
-        }
+        if (current().view !== 'list') return;
+        if (!wasAtBottom) return;
+        window.scrollTo(0, document.body.scrollHeight);
     }).observe(document.getElementById('stream-pane'), {childList: true, subtree: true});
 
-    // Auto-scroll the conversation as messages stream in.
     new MutationObserver(() => {
-        const c = document.getElementById('thread-conversation');
-        if (c) c.scrollTop = c.scrollHeight;
+        if (current().view !== 'thread') return;
+        if (!wasAtBottom) return;
+        window.scrollTo(0, document.body.scrollHeight);
     }).observe(document.getElementById('thread-conversation'), {childList: true, subtree: true});
 
     // Auto-dismiss toasts so they don't pile up if many arrive.
