@@ -61,8 +61,8 @@ async def run_terminal(args: argparse.Namespace) -> int:
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
         log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
 
-        sink = TerminalSink(log, ansi=ansi_enabled())
         tutor_store = TutorStore(state_dir / 'tutor.json')
+        sink = TerminalSink(log, ansi=ansi_enabled(), tutor_store=tutor_store)
 
         client = await connect_with_fallback(
             options,
@@ -75,6 +75,7 @@ async def run_terminal(args: argparse.Namespace) -> int:
             await stdin_loop(client, sink, filter_re, stop_event, session_path)
         finally:
             await client.__aexit__(None, None, None)
+            await sink.flush_pending_writes()
 
         log.write('=== session end ===\n')
 

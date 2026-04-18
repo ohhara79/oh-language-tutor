@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from typing import TYPE_CHECKING
 
+from tutor.types import TutorEntry
+
 if TYPE_CHECKING:
     from typing import TextIO
 
+    from tutor.tutor_store import TutorStore
     from tutor.types import ThreadMeta
 
 # ANSI escape helpers (suppressed automatically when stdout is not a TTY).
@@ -26,9 +30,16 @@ def ansi_enabled() -> bool:
 class TerminalSink:
     """OutputSink implementation that writes to stdout + a log file."""
 
-    def __init__(self, log: TextIO, *, ansi: bool) -> None:
+    def __init__(self, log: TextIO, *, ansi: bool, tutor_store: TutorStore) -> None:
         self._log: TextIO = log
         self._ansi: bool = ansi
+        self._tutor_store: TutorStore = tutor_store
+        self._pending_writes: set[asyncio.Task[None]] = set()
+
+    async def flush_pending_writes(self) -> None:
+        """Await every outstanding TutorStore.append_async task."""
+        if self._pending_writes:
+            await asyncio.gather(*self._pending_writes, return_exceptions=True)
 
     # -- OutputSink protocol --------------------------------------------------
 
@@ -45,6 +56,10 @@ class TerminalSink:
         self._log.write(f'--- explanation for: {raw}\n')
         self._log.write(text + '\n')
         self._log.write('---\n')
+        entry = TutorEntry(raw=raw, explanation=text)
+        task = asyncio.create_task(self._tutor_store.append_async(entry))
+        self._pending_writes.add(task)
+        task.add_done_callback(self._pending_writes.discard)
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
         pass  # terminal mode does not display thread conversations
