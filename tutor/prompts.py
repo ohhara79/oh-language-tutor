@@ -5,10 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from tutor.types import LineRecord
+
 if TYPE_CHECKING:
     import argparse
 
-    from tutor.types import LineRecord
+
+# Linux execve() per-arg cap is PAGE_SIZE * 32 = 128 KiB on x86_64, and the
+# SDK passes system_prompt as a single argv entry. Stay well under with a
+# safety margin for SDK framing and multi-byte UTF-8.
+MAX_SYSTEM_PROMPT_BYTES = 96 * 1024
 
 
 def build_base_system_prompt(
@@ -76,18 +82,28 @@ def build_system_prompt(args: argparse.Namespace) -> str:
         except OSError as exc:
             msg = f'oh-language-tutor: cannot read --extra-system-prompt {path}: {exc}'
             raise SystemExit(msg) from exc
-        return base + '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extra
-    return base
+        result = base + '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extra
+    else:
+        result = base
+    size = len(result.encode('utf-8'))
+    if size > MAX_SYSTEM_PROMPT_BYTES:
+        msg = (
+            f'oh-language-tutor: system prompt is {size:,} bytes but the Linux '
+            f'execve per-arg cap limits it to {MAX_SYSTEM_PROMPT_BYTES:,} bytes. '
+            f'Shorten --extra-system-prompt ({args.extra_system_prompt}).'
+        )
+        raise SystemExit(msg)
+    return result
 
 
-def build_thread_system_prompt(
+def _render_thread_system_prompt(
     source_language: str,
     target_language: str,
     level: str,
     anchor: LineRecord,
     context_lines: list[LineRecord],
 ) -> str:
-    """Build a side-session system prompt for a followup thread."""
+    """Render the thread system prompt without size-trimming."""
     context_block = '\n'.join(
         f'  {lr.raw}' + (f'\n  [explanation: {lr.explanation}]' if lr.explanation else '') for lr in context_lines
     )
@@ -119,4 +135,54 @@ def build_thread_system_prompt(
         '---\n'
         '\n'
         "Now wait for the learner's question about the marked line.\n"
+    )
+
+
+def _truncate_to_utf8_bytes(text: str, limit: int) -> str:
+    """Cut *text* to at most *limit* UTF-8 bytes on a codepoint boundary."""
+    encoded = text.encode('utf-8')
+    if len(encoded) <= limit:
+        return text
+    return encoded[:limit].decode('utf-8', errors='ignore') + '\u2026'
+
+
+def build_thread_system_prompt(
+    source_language: str,
+    target_language: str,
+    level: str,
+    anchor: LineRecord,
+    context_lines: list[LineRecord],
+) -> str:
+    """Build a side-session system prompt, trimming to fit the argv cap.
+
+    The SDK embeds the returned string directly into a single execve()
+    argument (see ``_bundled/claude --system-prompt``), which Linux caps
+    at 128 KiB per arg. Drop the oldest context entries first (most
+    recent ones are most relevant) until the rendered prompt fits
+    ``MAX_SYSTEM_PROMPT_BYTES``. If the anchor alone is still too large
+    (very unusual — the explainer is word-capped), truncate its
+    explanation rather than fail the open.
+    """
+    trimmed = list(context_lines)
+    while True:
+        prompt = _render_thread_system_prompt(
+            source_language, target_language, level, anchor, trimmed,
+        )
+        if len(prompt.encode('utf-8')) <= MAX_SYSTEM_PROMPT_BYTES:
+            return prompt
+        if not trimmed:
+            break
+        trimmed.pop(0)
+
+    short_anchor = LineRecord(
+        idx=anchor.idx,
+        raw=_truncate_to_utf8_bytes(anchor.raw, MAX_SYSTEM_PROMPT_BYTES // 4),
+        explanation=(
+            _truncate_to_utf8_bytes(anchor.explanation, MAX_SYSTEM_PROMPT_BYTES // 2)
+            if anchor.explanation
+            else None
+        ),
+    )
+    return _render_thread_system_prompt(
+        source_language, target_language, level, short_anchor, [],
     )
