@@ -2,7 +2,7 @@
 
 All fallback-related behaviour lives here.  To remove the feature,
 delete this module and the short call to ``connect_with_fallback`` in
-``terminal.py`` / ``gui.py`` and the ``except`` / retry block in
+``terminal.py`` / ``tui.py`` and the ``except`` / retry block in
 ``thread_pool.send_message`` that import from it.
 """
 

@@ -211,7 +211,7 @@ class FollowupThreadPool:
         """Return the in-memory meta if the thread is active, else load from disk.
 
         In-memory meta reflects messages appended by an in-flight task before
-        its reply has been flushed, so the GUI can render up-to-date state
+        its reply has been flushed, so the TUI can render up-to-date state
         when switching back into a thread whose response is still streaming.
         """
         at = self._active.get(thread_id)

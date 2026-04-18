@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 async def run_terminal(args: argparse.Namespace) -> int:
-    """Run in terminal-only mode (default, no ``--gui``)."""
+    """Run in terminal-only mode (default, no ``--tui``)."""
     try:
         filter_re = re.compile(args.filter_regex) if args.filter_regex else None
     except re.PatternError as exc:

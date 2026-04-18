@@ -105,7 +105,7 @@ class OutputSink(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Command channel payloads (GUI -> core loop)
+# Command channel payloads (TUI -> core loop)
 # ---------------------------------------------------------------------------
 
 

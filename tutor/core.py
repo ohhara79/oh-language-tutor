@@ -1,4 +1,4 @@
-"""Shared stdin processing pipeline used by both terminal and GUI modes."""
+"""Shared stdin processing pipeline used by both terminal and TUI modes."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ async def _stdin_line_stream(
         shares the same event-loop.
     input_file:
         An explicit file object to read from instead of ``sys.stdin``.  Used
-        in GUI mode where ``sys.stdin`` has been redirected to ``/dev/tty``
+        in TUI mode where ``sys.stdin`` has been redirected to ``/dev/tty``
         for Textual, and the original piped input is read from a saved fd.
     """
     source = input_file or sys.stdin

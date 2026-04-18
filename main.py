@@ -22,13 +22,13 @@ def main() -> None:
     """Entry point for oh-language-tutor."""
     args = parse_args()
     runner = run_terminal
-    if args.gui:
+    if args.tui:
         try:
-            from tutor.gui import run_gui  # noqa: PLC0415
+            from tutor.tui import run_tui  # noqa: PLC0415
         except ImportError:
-            sys.stderr.write('[oh-language-tutor] --gui requires textual. Install it with: uv add textual\n')
+            sys.stderr.write('[oh-language-tutor] --tui requires textual. Install it with: uv add textual\n')
             sys.exit(1)
-        runner = run_gui
+        runner = run_tui
     elif args.web:
         try:
             from tutor.web import run_web  # noqa: PLC0415

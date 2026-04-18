@@ -54,7 +54,7 @@ scummvm 2>&1 \
       --level intermediate \
       --extra-system-prompt extras/bladerunner.md \
       --filter-regex '^\w+: "' \
-      --gui
+      --tui
 ```
 
 The extras file supplies the Blade Runner cast table, log format,

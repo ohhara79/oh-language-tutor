@@ -768,7 +768,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         stop_event = asyncio.Event()
 
-        # When stdin is a pipe (e.g. ``scummvm | tutor --gui``), Textual
+        # When stdin is a pipe (e.g. ``scummvm | tutor --tui``), Textual
         # needs the real terminal on stdin for keyboard/mouse input.  Save
         # the piped fd and redirect stdin to /dev/tty so both can coexist.
         pipe_file = None
@@ -865,7 +865,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
 
 # ---------------------------------------------------------------------------
-# GUI command dispatcher
+# TUI command dispatcher
 # ---------------------------------------------------------------------------
 
 
@@ -874,7 +874,7 @@ async def _dispatch_commands(
     pool: FollowupThreadPool,
     stop_event: asyncio.Event,
 ) -> None:
-    """Read commands from the GUI and dispatch to the thread pool."""
+    """Read commands from the TUI and dispatch to the thread pool."""
     while not stop_event.is_set():
         try:
             cmd = await asyncio.wait_for(queue.get(), timeout=0.1)
@@ -896,10 +896,10 @@ async def _dispatch_commands(
 
 
 # ---------------------------------------------------------------------------
-# GUI entry point
+# TUI entry point
 # ---------------------------------------------------------------------------
 
 
-async def run_gui(args: argparse.Namespace) -> int:
+async def run_tui(args: argparse.Namespace) -> int:
     """Launch the Textual TUI."""
     return await OhLanguageTutorApp.launch(args)
