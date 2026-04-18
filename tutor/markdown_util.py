@@ -29,12 +29,7 @@ def _insert_blank_before_lists(text: str) -> str:
     lines = text.split('\n')
     out: list[str] = []
     for line in lines:
-        if (
-            _RE_LIST_MARKER.match(line)
-            and out
-            and out[-1].strip()
-            and not _RE_LIST_MARKER.match(out[-1])
-        ):
+        if _RE_LIST_MARKER.match(line) and out and out[-1].strip() and not _RE_LIST_MARKER.match(out[-1]):
             out.append('')
         out.append(line)
     return '\n'.join(out)

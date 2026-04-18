@@ -166,7 +166,11 @@ def build_thread_system_prompt(
     trimmed = list(context_lines)
     while True:
         prompt = _render_thread_system_prompt(
-            source_language, target_language, level, anchor, trimmed,
+            source_language,
+            target_language,
+            level,
+            anchor,
+            trimmed,
         )
         if len(prompt.encode('utf-8')) <= MAX_SYSTEM_PROMPT_BYTES:
             return prompt
@@ -178,11 +182,13 @@ def build_thread_system_prompt(
         idx=anchor.idx,
         raw=_truncate_to_utf8_bytes(anchor.raw, MAX_SYSTEM_PROMPT_BYTES // 4),
         explanation=(
-            _truncate_to_utf8_bytes(anchor.explanation, MAX_SYSTEM_PROMPT_BYTES // 2)
-            if anchor.explanation
-            else None
+            _truncate_to_utf8_bytes(anchor.explanation, MAX_SYSTEM_PROMPT_BYTES // 2) if anchor.explanation else None
         ),
     )
     return _render_thread_system_prompt(
-        source_language, target_language, level, short_anchor, [],
+        source_language,
+        target_language,
+        level,
+        short_anchor,
+        [],
     )
