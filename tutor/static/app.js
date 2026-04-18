@@ -108,6 +108,8 @@
                     // tapping navigates from line to thread). Simply re-pin scroll.
                     t.scrollTop = t.scrollHeight;
                 }
+                const ta = t.querySelector('form.thread-compose textarea[name="text"]');
+                if (ta) ta.focus();
             } else if (current().view === 'thread') {
                 // Thread was deleted while viewing it -> go back.
                 history.back();
@@ -224,6 +226,9 @@
         if (!form) return;
         if (!evt.detail || !evt.detail.successful) return;
         const ta = form.querySelector('textarea[name="text"]');
-        if (ta) ta.value = '';
+        if (ta) {
+            ta.value = '';
+            ta.focus();
+        }
     });
 })();
