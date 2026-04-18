@@ -118,9 +118,23 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
     "S101",     # assert used
+    "S106",     # hardcoded-password-func-arg (false positives on skip_token sentinel)
+    "S110",     # try-except-pass (tests intentionally swallow cleanup errors)
     "PLR2004",  # magic-value-comparison
     "ANN201",   # missing-return-type-undocumented-public-function
     "SLF001",   # private-member-access (tests exercise _helpers intentionally)
+    "TC001",    # typing-only-first-party-import (tests need runtime access)
+    "TC002",    # typing-only-third-party-import
+    "TC003",    # typing-only-standard-library-import
+    "PLC0415",  # `import` should be at the top-level (fixtures lazily import to avoid circular deps)
+    "PYI034",   # __aenter__ self return (fake SDK client can't use typing.Self cleanly)
+    "EM101",    # exception-from-string-literal (test-only raises)
+    "TRY003",   # long-message-outside-exception-class (test-only raises)
+    "ARG001",   # unused-function-argument (fakes match real signatures)
+    "PERF401",  # use-list-comprehension (explicit loops are clearer in tests)
+    "SIM105",   # use-contextlib-suppress (test drain helpers read more plainly)
+    "PT018",    # composite-assertion (readable for invariant checks)
+    "C408",     # dict-literal (keyword-form builders are readable in tests)
 ]
 
 [tool.ruff.lint.flake8-quotes]

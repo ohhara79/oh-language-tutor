@@ -28,7 +28,7 @@ def _base_ns(
         source_language='English',
         target_language='Korean',
         level='intermediate',
-        skip_token='SKIP',  # noqa: S106
+        skip_token='SKIP',
         extra_system_prompt=extra_system_prompt,
     )
 
