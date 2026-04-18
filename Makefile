@@ -1,4 +1,4 @@
-.PHONY: run lint format
+.PHONY: run lint format test
 
 lint:
 	uv run --frozen ruff format --check --diff .
@@ -9,3 +9,6 @@ lint:
 format:
 	uv run --frozen ruff format .
 	uv run --frozen ruff check --fix .
+
+test:
+	uv run --frozen pytest --cov

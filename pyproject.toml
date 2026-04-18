@@ -115,6 +115,14 @@ ignore = [
     "S311",     # suspicious-non-cryptographic-random-usage
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",     # assert used
+    "PLR2004",  # magic-value-comparison
+    "ANN201",   # missing-return-type-undocumented-public-function
+    "SLF001",   # private-member-access (tests exercise _helpers intentionally)
+]
+
 [tool.ruff.lint.flake8-quotes]
 inline-quotes = "single"
 
@@ -134,3 +142,16 @@ reportPrivateUsage = "none"
 reportUnreachable = "hint"
 reportUnusedCallResult = "none"
 reportUnusedParameter = "none"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["tutor"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
