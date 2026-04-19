@@ -20,6 +20,15 @@
   </div>
 
   <main id="stream-pane" sse-swap="explanation" hx-swap="beforeend">
+    <div id="load-older-indicator" class="htmx-indicator" aria-live="polite">Loading older&hellip;</div>
+    {% if has_more %}
+    <div id="load-older-sentinel"
+         hx-get="/partials/older?before={{ oldest_id }}&n={{ page_n }}"
+         hx-trigger="intersect once"
+         hx-swap="outerHTML"
+         hx-indicator="#load-older-indicator"
+         aria-hidden="true"></div>
+    {% endif %}
     {% for entry in entries %}
       {% set raw_escaped = entry.raw | e %}
       {% set explanation_html = render_markdown(entry.explanation) %}
@@ -30,11 +39,6 @@
   <div id="thread-list" sse-swap="thread_list" hx-swap="innerHTML" style="display:none">
     {% include 'partials/thread_list.html' %}
   </div>
-
-  <section id="orphan-threads-section">
-    <h2>Other threads</h2>
-    <div id="orphan-threads"></div>
-  </section>
 
   <section id="thread-conversation" class="thread-conversation">
     <p class="empty">Pick a thread from the list, or tap &ldquo;Ask&rdquo; on a line to start a new one.</p>

@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 _TEMPLATES_DIR = Path(__file__).parent / 'templates'
 _STATIC_DIR = Path(__file__).parent / 'static'
+_STREAM_PAGE_N = 50
 
 
 @dataclass
@@ -96,15 +97,37 @@ def build_app(ctx: WebContext) -> FastAPI:
 
     @app.get('/', response_class=HTMLResponse)
     async def index() -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
-        entries = ctx.tutor_store.load()
+        entries, has_more = ctx.tutor_store.load_tail(_STREAM_PAGE_N)
+        oldest_id = entries[0].id if entries else None
         threads = ctx.thread_store.list_threads()
         html_body = ctx.env.get_template('index.html').render(
             entries=entries,
+            has_more=has_more,
+            oldest_id=oldest_id,
+            page_n=_STREAM_PAGE_N,
             threads=threads,
             source_language=ctx.args.source_language,
             target_language=ctx.args.target_language,
             level=ctx.args.level,
             version=ctx.version,
+        )
+        return HTMLResponse(content=html_body)
+
+    @app.get('/partials/older', response_class=HTMLResponse)
+    async def older(  # pyright: ignore[reportUnusedFunction]
+        before: str,
+        n: int = _STREAM_PAGE_N,
+    ) -> HTMLResponse:
+        result = ctx.tutor_store.load_before(before, n)
+        if result is None:
+            raise HTTPException(status_code=404, detail='cursor not found')
+        older_entries, has_more = result
+        new_oldest_id = older_entries[0].id if older_entries else before
+        html_body = ctx.env.get_template('partials/older_lines.html').render(
+            entries=older_entries,
+            has_more=has_more,
+            oldest_id=new_oldest_id,
+            page_n=n,
         )
         return HTMLResponse(content=html_body)
 

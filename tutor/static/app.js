@@ -81,9 +81,11 @@
             return;
         }
 
-        if (t.id === 'stream-pane') {
-            // A new line appeared (explanation SSE); its empty .line-threads
-            // may now match an existing orphan thread.
+        if (t.id === 'stream-pane' || t.id === 'load-older-sentinel') {
+            // stream-pane: new line appeared via explanation SSE (beforeend).
+            // load-older-sentinel: auto-load revealed older lines (outerHTML
+            // swap of the sentinel itself). In both cases, newly-inserted
+            // .line-threads containers may match existing thread items.
             distributeThreads();
             return;
         }
@@ -111,9 +113,11 @@
     });
 
     // Distribute threads from the hidden #thread-list source into per-line
-    // .line-threads containers (by data-anchor-id) and push unmatched ones
-    // into #orphan-threads. Called on load and after every thread_list /
-    // stream-pane SSE swap.
+    // .line-threads containers (by data-anchor-id). Threads whose anchor
+    // line isn't currently in the DOM (older-not-yet-loaded) are dropped
+    // from the view silently; they reappear once auto-load reveals the
+    // anchor. Called on load and after every thread_list / stream-pane
+    // SSE swap.
     function distributeThreads() {
         const source = document.getElementById('thread-list');
         if (!source) return;
@@ -124,18 +128,13 @@
         });
 
         const grouped = new Map();
-        const orphans = [];
         for (const li of items) {
             const aid = li.dataset.anchorId || '';
-            const line = aid
-                ? document.querySelector(`.line[data-anchor-id="${CSS.escape(aid)}"]`)
-                : null;
-            if (line) {
-                if (!grouped.has(aid)) grouped.set(aid, []);
-                grouped.get(aid).push(li);
-            } else {
-                orphans.push(li);
-            }
+            if (!aid) continue;
+            const line = document.querySelector(`.line[data-anchor-id="${CSS.escape(aid)}"]`);
+            if (!line) continue;
+            if (!grouped.has(aid)) grouped.set(aid, []);
+            grouped.get(aid).push(li);
         }
 
         for (const [aid, list] of grouped) {
@@ -148,18 +147,6 @@
             list.forEach((li) => { ul.appendChild(li.cloneNode(true)); });
             container.appendChild(ul);
             if (window.htmx) window.htmx.process(container);
-        }
-
-        const orphanContainer = document.getElementById('orphan-threads');
-        if (orphanContainer) {
-            orphanContainer.innerHTML = '';
-            if (orphans.length > 0) {
-                const ul = document.createElement('ul');
-                ul.className = 'thread-list';
-                orphans.forEach((li) => { ul.appendChild(li.cloneNode(true)); });
-                orphanContainer.appendChild(ul);
-                if (window.htmx) window.htmx.process(orphanContainer);
-            }
         }
     }
 
@@ -192,6 +179,26 @@
         if (!wasAtBottom) return;
         window.scrollTo(0, document.body.scrollHeight);
     }).observe(document.getElementById('thread-conversation'), {childList: true, subtree: true});
+
+    // When the load-older sentinel fires, preserve the reader's content
+    // position so the viewport doesn't jump to the newly-prepended older
+    // content. This also pushes the replacement sentinel out of the viewport,
+    // preventing an immediate re-fire cascade.
+    let _loadOlderBefore = null;
+    document.body.addEventListener('htmx:beforeRequest', (evt) => {
+        const t = evt.target;
+        if (!t || t.id !== 'load-older-sentinel') return;
+        _loadOlderBefore = {
+            scrollY: window.scrollY,
+            height: document.documentElement.scrollHeight,
+        };
+    });
+    document.body.addEventListener('htmx:afterSettle', () => {
+        if (_loadOlderBefore === null) return;
+        const delta = document.documentElement.scrollHeight - _loadOlderBefore.height;
+        window.scrollTo(0, _loadOlderBefore.scrollY + delta);
+        _loadOlderBefore = null;
+    });
 
     // Auto-dismiss toasts so they don't pile up if many arrive.
     document.body.addEventListener('htmx:oobAfterSwap', (evt) => {

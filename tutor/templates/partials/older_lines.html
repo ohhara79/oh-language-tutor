@@ -1,0 +1,13 @@
+{% if has_more %}
+<div id="load-older-sentinel"
+     hx-get="/partials/older?before={{ oldest_id }}&n={{ page_n }}"
+     hx-trigger="intersect once"
+     hx-swap="outerHTML"
+     hx-indicator="#load-older-indicator"
+     aria-hidden="true"></div>
+{% endif %}
+{% for entry in entries %}
+  {% set raw_escaped = entry.raw | e %}
+  {% set explanation_html = render_markdown(entry.explanation) %}
+  {% include 'partials/line.html' %}
+{% endfor %}

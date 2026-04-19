@@ -53,6 +53,15 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .raw-toggle:hover { background: rgba(128, 128, 128, 0.08); }
 .raw-toggle:focus-visible { outline: 2px solid #8ab; outline-offset: -2px; }
 
+#load-older-indicator {
+    display: none;
+    padding: 0.5rem;
+    text-align: center;
+    color: #888;
+    font-size: 0.9rem;
+}
+#load-older-indicator.htmx-request { display: block; }
+
 .line-detail { padding: 0.25rem 0.25rem 0.75rem; }
 .explanation-body { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .explanation-body :first-child { margin-top: 0; }
@@ -93,14 +102,6 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .btn-send { padding: 0.5rem 0.75rem; flex-shrink: 0; }
 
 /* ---------- Thread list ---------- */
-
-#orphan-threads-section { margin-top: 1.5rem; }
-#orphan-threads-section h2 {
-    font-size: 0.95rem;
-    margin: 0 0 0.5rem;
-    color: #666;
-}
-#orphan-threads-section:has(#orphan-threads:empty) { display: none; }
 
 .thread-list {
     list-style: none;
@@ -231,7 +232,6 @@ body.view-thread #thread-conversation { display: flex; }
     body { background: #1a1a1a; color: #eee; }
     header { border-color: #444; }
     .line { border-color: #333; }
-    #orphan-threads-section h2 { color: #aaa; }
     .msg.user { color: #6ab0ff; }
     .anchor-raw { color: #bbb; }
     blockquote { color: #bbb; }
