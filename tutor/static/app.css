@@ -4,7 +4,7 @@ body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     margin: 0 auto;
     max-width: 44rem;
-    padding: 0 1rem 5rem;
+    padding: 0 1rem 1rem;
     line-height: 1.55;
 }
 
@@ -163,11 +163,7 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .msg.assistant :last-child { margin-bottom: 0; }
 
 .thread-compose {
-    position: sticky;
-    bottom: 0;
-    background: Canvas;
     padding-top: 0.5rem;
-    padding-bottom: env(safe-area-inset-bottom, 0);
     display: flex;
     flex-direction: row;
     align-items: stretch;
@@ -245,6 +241,5 @@ body.view-thread #thread-conversation { display: flex; }
     .thread-list li.thread-item a:hover { border-color: #555; }
     .thread-conversation { border-color: #444; }
     .thread-header { border-color: #444; }
-    .thread-compose { background: #1a1a1a; }
     .raw-toggle:hover { background: rgba(255, 255, 255, 0.05); }
 }
