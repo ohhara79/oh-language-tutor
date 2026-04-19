@@ -56,12 +56,16 @@
 
     // Tap a raw-line toggle in list view -> inline-expand that line's detail.
     // Clicking a different line collapses the previous one; clicking the same
-    // line again collapses it (toggle).
+    // line again collapses it (toggle). Clicking the explanation body also
+    // collapses the line, except for links inside the explanation.
     document.getElementById('stream-pane').addEventListener('click', (e) => {
         if (current().view !== 'list') return;
         const toggle = e.target.closest('.raw-toggle');
-        if (!toggle) return;
-        const line = toggle.closest('.line');
+        const explanation = e.target.closest('.explanation-body');
+        if (explanation && e.target.closest('a')) return;
+        const trigger = toggle || explanation;
+        if (!trigger) return;
+        const line = trigger.closest('.line');
         if (!line) return;
         const wasActive = line.classList.contains('active');
         document.querySelectorAll('.line.active').forEach((el) => {
@@ -69,8 +73,8 @@
         });
         if (!wasActive) {
             line.classList.add('active');
-            line.scrollIntoView({block: 'start', behavior: 'smooth'});
         }
+        line.scrollIntoView({block: 'start', behavior: 'smooth'});
     });
 
     // HTMX swap integration.
