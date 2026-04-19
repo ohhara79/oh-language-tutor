@@ -67,7 +67,10 @@
         document.querySelectorAll('.line.active').forEach((el) => {
             el.classList.remove('active');
         });
-        if (!wasActive) line.classList.add('active');
+        if (!wasActive) {
+            line.classList.add('active');
+            line.scrollIntoView({block: 'start', behavior: 'smooth'});
+        }
     });
 
     // HTMX swap integration.
