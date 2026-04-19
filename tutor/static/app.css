@@ -50,7 +50,7 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .raw-toggle:focus-visible { outline: 2px solid #8ab; outline-offset: -2px; }
 
 .line-detail { padding: 0.25rem 0.25rem 0.75rem; }
-.explanation-body { margin: 0 0 0.5rem; }
+.explanation-body { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .explanation-body :first-child { margin-top: 0; }
 .explanation-body :last-child { margin-bottom: 0; }
 
