@@ -16,10 +16,14 @@ header {
 header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .meta { color: #888; font-size: 0.85rem; margin: 0; }
 
-#back-btn {
+#thread-topbar {
     display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin: 0 0 0.75rem;
 }
+#thread-topbar-actions form { margin: 0; }
 
 /* ---------- Stream / raw lines ---------- */
 
@@ -142,15 +146,6 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
     border-bottom: 1px solid #ccc;
     padding-bottom: 0.5rem;
 }
-.thread-header::after {
-    content: "";
-    display: block;
-    clear: both;
-}
-.thread-header > form {
-    float: right;
-    margin: 0 0 0.5rem 0.75rem;
-}
 .anchor-raw {
     font-family: ui-monospace, monospace;
     font-size: 0.9rem;
@@ -229,7 +224,7 @@ body.view-list .line.active .raw-toggle { font-weight: 600; }
 body.view-list #thread-conversation { display: none; }
 
 /* Thread-detail view: only the conversation is shown. */
-body.view-thread #back-btn { display: inline-flex; }
+body.view-thread #thread-topbar { display: flex; }
 body.view-thread #stream-pane,
 body.view-thread #orphan-threads-section { display: none; }
 body.view-thread #thread-conversation { display: flex; }

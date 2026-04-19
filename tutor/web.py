@@ -196,7 +196,9 @@ def build_app(ctx: WebContext) -> FastAPI:
     ) -> HTMLResponse:
         await ctx.pool.delete_thread(thread_id)
         return HTMLResponse(
-            content='<p class="empty">Thread deleted.</p>',
+            content=(
+                '<p class="empty">Thread deleted.</p><div id="thread-topbar-actions" hx-swap-oob="innerHTML"></div>'
+            ),
         )
 
     @app.post('/commands/delete_tutor_entry')

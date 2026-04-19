@@ -14,7 +14,10 @@
     <p class="meta">{{ source_language }} &rarr; {{ target_language }} &middot; {{ level }}</p>
   </header>
 
-  <button type="button" id="back-btn" class="btn">&larr; Back</button>
+  <div id="thread-topbar">
+    <button type="button" id="back-btn" class="btn">&larr; Back</button>
+    <div id="thread-topbar-actions"></div>
+  </div>
 
   <main id="stream-pane" sse-swap="explanation" hx-swap="beforeend">
     {% for entry in entries %}
