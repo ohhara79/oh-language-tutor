@@ -275,13 +275,13 @@ async def run_web(args: argparse.Namespace) -> int:
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        model=args.model,
+        model=args.explain_model,
         allowed_tools=[],
         resume=resume_id,
     )
     options_fresh = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        model=args.model,
+        model=args.explain_model,
         allowed_tools=[],
         resume=None,
     )
@@ -290,8 +290,9 @@ async def run_web(args: argparse.Namespace) -> int:
 
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
         log.write(
-            f'\n=== session start mode=web model={args.model} '
-            f'resume={resume_id or "-"} bind={args.web_host}:{args.web_port} ===\n',
+            f'\n=== session start mode=web explain_model={args.explain_model} '
+            f'ask_model={args.ask_model} resume={resume_id or "-"} '
+            f'bind={args.web_host}:{args.web_port} ===\n',
         )
 
         tutor_store = TutorStore(state_dir / 'tutor.json')
@@ -307,7 +308,7 @@ async def run_web(args: argparse.Namespace) -> int:
             log=log,
         )
         pool = FollowupThreadPool(
-            model=args.model,
+            model=args.ask_model,
             sink=sink,
             store=thread_store,
             tutor_store=tutor_store,

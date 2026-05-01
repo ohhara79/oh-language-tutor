@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from tutor.args import DEFAULT_MODEL, DEFAULT_SKIP_TOKEN, parse_args
+from tutor.args import (
+    DEFAULT_ASK_MODEL,
+    DEFAULT_EXPLAIN_MODEL,
+    DEFAULT_SKIP_TOKEN,
+    parse_args,
+)
 
 
 def _required() -> list[str]:
@@ -31,7 +36,8 @@ def test_defaults() -> None:
     args = parse_args(_required())
     assert args.level == 'intermediate'
     assert args.skip_token == DEFAULT_SKIP_TOKEN
-    assert args.model == DEFAULT_MODEL
+    assert args.explain_model == DEFAULT_EXPLAIN_MODEL
+    assert args.ask_model == DEFAULT_ASK_MODEL
     assert args.web_host == '127.0.0.1'
     assert args.web_port == 8000
     assert args.tui is False

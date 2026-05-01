@@ -7,7 +7,8 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_STATE_DIR = PROJECT_DIR / 'state'
-DEFAULT_MODEL = 'claude-opus-4-7'
+DEFAULT_EXPLAIN_MODEL = 'claude-haiku-4-5'
+DEFAULT_ASK_MODEL = 'claude-opus-4-7'
 DEFAULT_LEVEL = 'intermediate'
 DEFAULT_SKIP_TOKEN = 'SKIP'  # noqa: S105
 
@@ -48,9 +49,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help='Sentinel word the LLM emits for non-content lines (default: %(default)s).',
     )
     p.add_argument(
-        '--model',
-        default=DEFAULT_MODEL,
-        help='Claude model id (default: %(default)s).',
+        '--explain-model',
+        default=DEFAULT_EXPLAIN_MODEL,
+        help='Claude model id for streaming explanations (default: %(default)s).',
+    )
+    p.add_argument(
+        '--ask-model',
+        default=DEFAULT_ASK_MODEL,
+        help='Claude model id for ask-thread follow-ups (default: %(default)s).',
     )
     p.add_argument(
         '--state-dir',

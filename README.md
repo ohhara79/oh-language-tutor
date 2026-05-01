@@ -82,7 +82,8 @@ base prompt built by the tool and will be injected automatically.
 | `--extra-system-prompt` | _off_ | Path to a file whose contents are appended to the base prompt. |
 | `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. |
 | `--skip-token` | `SKIP` | Sentinel word the LLM emits for non-content lines. |
-| `--model` | `claude-opus-4-6` | Claude model id. Drop to Sonnet/Haiku to trade quality for speed/cost. |
+| `--explain-model` | `claude-haiku-4-5` | Claude model id for streaming explanations. Haiku is the cheap default; raise it if you want higher-quality glosses. |
+| `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. Opus is the default since threads are reasoning-heavy. |
 | `--session-file` | `state/session.id` | Where the session id is persisted across runs. |
 | `--log-file` | `state/tutor.log` | Append-only log of raw lines + explanations. |
 | `--new-session` | _off_ | Ignore the saved session id and start fresh. |

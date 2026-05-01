@@ -39,13 +39,13 @@ async def run_terminal(args: argparse.Namespace) -> int:
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        model=args.model,
+        model=args.explain_model,
         allowed_tools=[],
         resume=resume_id,
     )
     options_fresh = ClaudeAgentOptions(
         system_prompt=system_prompt,
-        model=args.model,
+        model=args.explain_model,
         allowed_tools=[],
         resume=None,
     )
@@ -59,7 +59,10 @@ async def run_terminal(args: argparse.Namespace) -> int:
         asyncio.get_running_loop().add_signal_handler(signal.SIGINT, _handle_sigint)
 
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
-        log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
+        log.write(
+            f'\n=== session start explain_model={args.explain_model} '
+            f'ask_model={args.ask_model} resume={resume_id or "-"} ===\n',
+        )
 
         tutor_store = TutorStore(state_dir / 'tutor.json')
         sink = TerminalSink(log, ansi=ansi_enabled(), tutor_store=tutor_store)

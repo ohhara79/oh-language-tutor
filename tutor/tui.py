@@ -745,13 +745,13 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
-            model=args.model,
+            model=args.explain_model,
             allowed_tools=[],
             resume=resume_id,
         )
         options_fresh = ClaudeAgentOptions(
             system_prompt=system_prompt,
-            model=args.model,
+            model=args.explain_model,
             allowed_tools=[],
             resume=None,
         )
@@ -771,7 +771,10 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
 
         try:
             with log_path.open('a', encoding='utf-8', buffering=1) as log:
-                log.write(f'\n=== session start model={args.model} resume={resume_id or "-"} ===\n')
+                log.write(
+                    f'\n=== session start explain_model={args.explain_model} '
+                    f'ask_model={args.ask_model} resume={resume_id or "-"} ===\n',
+                )
 
                 store = ThreadStore(log_path.parent / 'threads')
                 tutor_store = TutorStore(log_path.parent / 'tutor.json')
@@ -787,7 +790,7 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
                 )
 
                 pool = FollowupThreadPool(
-                    model=args.model,
+                    model=args.ask_model,
                     sink=app,
                     store=store,
                     tutor_store=tutor_store,
