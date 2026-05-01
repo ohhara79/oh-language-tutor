@@ -691,9 +691,13 @@ class OhLanguageTutorApp(App['OhLanguageTutorApp']):
         self._scroll_left_pane_to_anchor_id(meta.anchor_id)
 
     def action_hide_thread(self) -> None:
-        # Toggle to the list view but keep the backend thread (and any
-        # in-flight streaming task) alive. The user can return to the same
-        # thread without losing an in-progress reply.
+        # Switch back to the list and ask the pool to release the subprocess
+        # once the in-flight reply (if any) has landed. Re-clicking the same
+        # thread before the reply lands clears the pending hide on the next
+        # send_message; if the user does nothing, the subprocess is freed
+        # when the reply finishes.
+        if self._current_thread_id:
+            self._cmd_queue.put_nowait(HideThreadCmd(thread_id=self._current_thread_id))
         self._thread_view_mode = 'list'
         self._show_list_mode()
         self._refresh_thread_list()
@@ -874,7 +878,7 @@ async def _dispatch_commands(
             case SendMessageCmd():
                 await pool.send_message(cmd.thread_id, cmd.text)
             case HideThreadCmd():
-                await pool.hide_thread(cmd.thread_id)
+                await pool.hide_when_idle(cmd.thread_id)
             case DeleteThreadCmd():
                 await pool.delete_thread(cmd.thread_id)
             case DeleteTutorEntryCmd():

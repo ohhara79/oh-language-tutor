@@ -126,6 +126,9 @@ class _FakePool:
     async def hide_thread(self, thread_id: str) -> None:
         self.hidden.append(thread_id)
 
+    async def hide_when_idle(self, thread_id: str) -> None:
+        self.hidden.append(thread_id)
+
     async def delete_thread(self, thread_id: str) -> None:
         self.deleted.append(thread_id)
         self.threads.pop(thread_id, None)

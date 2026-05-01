@@ -34,8 +34,8 @@ class _RecordingPool:
     async def send_message(self, thread_id: str, text: str) -> None:
         self.calls.append(('send_message', (thread_id, text)))
 
-    async def hide_thread(self, thread_id: str) -> None:
-        self.calls.append(('hide_thread', (thread_id,)))
+    async def hide_when_idle(self, thread_id: str) -> None:
+        self.calls.append(('hide_when_idle', (thread_id,)))
 
     async def delete_thread(self, thread_id: str) -> None:
         self.calls.append(('delete_thread', (thread_id,)))
@@ -86,7 +86,7 @@ async def test_hide_thread_cmd_dispatches():
     q: asyncio.Queue[Any] = asyncio.Queue()
     q.put_nowait(HideThreadCmd(thread_id='t-4'))
     await _run_once(pool, q)
-    assert pool.calls == [('hide_thread', ('t-4',))]
+    assert pool.calls == [('hide_when_idle', ('t-4',))]
 
 
 async def test_delete_thread_cmd_dispatches():
@@ -112,7 +112,7 @@ async def test_multiple_commands_dispatched_in_order():
     q.put_nowait(SendMessageCmd(thread_id='t-1', text='q'))
     q.put_nowait(HideThreadCmd(thread_id='t-1'))
     await _run_once(pool, q)
-    assert [c[0] for c in pool.calls] == ['open_thread', 'send_message', 'hide_thread']
+    assert [c[0] for c in pool.calls] == ['open_thread', 'send_message', 'hide_when_idle']
 
 
 async def test_stop_event_exits_loop_on_empty_queue():

@@ -44,6 +44,7 @@ class _ActiveThread:
     client: ClaudeSDKClient | None = None
     task: asyncio.Task[None] | None = None
     resume_session_id: str | None = None
+    hide_pending: bool = False
 
 
 class FollowupThreadPool:
@@ -149,6 +150,9 @@ class FollowupThreadPool:
         if at is None:
             self._sink.on_error(f'thread {thread_id} is not active')
             return
+        # A new message re-engages the thread, so any pending idle-hide is
+        # cancelled.
+        at.hide_pending = False
         prev_task = at.task
         at.task = asyncio.create_task(self._stream_response(at, text, prev_task))
         at.task.add_done_callback(self._on_task_done)
@@ -175,6 +179,24 @@ class FollowupThreadPool:
         if at.client is not None:
             await self._disconnect(at.client)
         self._log.write(f'=== thread close thread_id={thread_id} ===\n')
+
+    async def hide_when_idle(self, thread_id: str) -> None:
+        """Disconnect the thread now if idle, else after the in-flight reply lands.
+
+        ``hide_thread`` cancels an in-flight stream after a 2 s grace; that's
+        appropriate when we *must* close (delete, shutdown). For routine
+        navigation away from a thread we'd rather wait for the reply to
+        finish naturally — the ``_stream_response`` ``finally`` block sees
+        ``hide_pending`` and tears down the subprocess after persisting the
+        reply.
+        """
+        at = self._active.get(thread_id)
+        if at is None:
+            return
+        if at.task is None or at.task.done():
+            await self.hide_thread(thread_id)
+            return
+        at.hide_pending = True
 
     async def delete_thread(self, thread_id: str) -> None:
         """Disconnect and remove from disk permanently."""
@@ -326,6 +348,25 @@ class FollowupThreadPool:
                 self._log.write(f'[assistant] {response}\n')
                 self._sink.on_thread_list(self._store.list_threads())
             self._sink.on_thread_done(at.thread_id, response)
+            if at.hide_pending:
+                # User navigated away while we were streaming. Now that the
+                # reply has landed, drop the entry and tear down the subprocess.
+                # Disconnecting from inside the task itself (vs. via
+                # hide_thread) avoids an asyncio.shield(at.task) self-deadlock.
+                # ``at.client`` may still be None if the connect attempt above
+                # failed before assigning — guard explicitly so the disconnect
+                # is skipped in that case.
+                self._active.pop(at.thread_id, None)
+                at.hide_pending = False
+                # Early-return paths above (e.g. failed initial connect) can
+                # land here with at.client still None; basedpyright doesn't
+                # see those paths because its narrowing is taken from the
+                # successful query branch.
+                if at.client is not None:  # pyright: ignore[reportUnnecessaryComparison]
+                    client_to_close = at.client
+                    at.client = None
+                    await self._disconnect(client_to_close)
+                self._log.write(f'=== thread close (deferred) thread_id={at.thread_id} ===\n')
 
     @staticmethod
     async def _disconnect(client: ClaudeSDKClient) -> None:

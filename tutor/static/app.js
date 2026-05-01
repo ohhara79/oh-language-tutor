@@ -24,6 +24,16 @@
         }
     }
 
+    // Tell the backend the user has navigated away from a thread so the
+    // `claude` subprocess can be released (after any in-flight reply lands).
+    // Fire-and-forget; double-calls are a safe no-op.
+    function notifyHideThread(threadId) {
+        if (!threadId) return;
+        const fd = new FormData();
+        fd.append('thread_id', threadId);
+        fetch('/commands/hide_thread', {method: 'POST', body: fd, keepalive: true});
+    }
+
     function push(view, params) {
         stack.push(Object.assign({view}, params || {}));
         history.pushState({depth: stack.length}, '');
@@ -32,7 +42,8 @@
 
     function pop() {
         if (stack.length > 1) {
-            stack.pop();
+            const popped = stack.pop();
+            if (popped.view === 'thread') notifyHideThread(popped.thread_id);
             render();
         }
     }
@@ -43,7 +54,8 @@
             return;
         }
         if (stack.length > 1) {
-            stack.pop();
+            const popped = stack.pop();
+            if (popped.view === 'thread') notifyHideThread(popped.thread_id);
             render();
         }
     });
@@ -104,16 +116,20 @@
             // Use that marker to tell "real thread loaded" from "empty state".
             const isEmpty = !!t.querySelector('p.empty');
             if (!isEmpty) {
+                const tid = t.querySelector('input[name="thread_id"]')?.value || '';
                 if (current().view !== 'thread') {
-                    push('thread');
+                    push('thread', {thread_id: tid});
                 } else {
                     // Already in thread view -> re-pin scroll to bottom.
+                    current().thread_id = tid;
                     t.scrollTop = t.scrollHeight;
                 }
                 const ta = t.querySelector('form.thread-compose textarea[name="text"]');
                 if (ta) ta.focus();
             } else if (current().view === 'thread') {
                 // Thread was deleted while viewing it -> go back.
+                // Don't fire hide on pop — delete already disconnected.
+                current().thread_id = '';
                 history.back();
             }
         }

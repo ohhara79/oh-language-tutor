@@ -210,7 +210,7 @@ def build_app(ctx: WebContext) -> FastAPI:
     async def hide_thread(  # pyright: ignore[reportUnusedFunction]
         thread_id: Annotated[str, Form()],
     ) -> Response:
-        await ctx.pool.hide_thread(thread_id)
+        await ctx.pool.hide_when_idle(thread_id)
         return Response(status_code=204)
 
     @app.post('/commands/delete_thread', response_class=HTMLResponse)
