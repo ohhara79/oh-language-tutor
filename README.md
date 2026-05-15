@@ -83,8 +83,8 @@ base prompt built by the tool and will be injected automatically.
 | `--extra-system-prompt` | _off_ | Path to a file whose contents are appended to the base prompt. |
 | `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. |
 | `--skip-token` | `SKIP` | Sentinel word the LLM emits for non-content lines. |
-| `--explain-model` | `claude-sonnet-4-6` | Claude model id for streaming explanations. |
-| `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. Opus is the default since threads are reasoning-heavy. |
+| `--explain-model` | `claude-opus-4-7` | Claude model id for streaming explanations. |
+| `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. |
 | `--state-dir` | `state/` | Directory for the session id, log, and persisted threads. |
 | `--web-host` | `127.0.0.1` | Bind address for the browser UI. |
 | `--web-port` | `8000` | Port for the browser UI. |
