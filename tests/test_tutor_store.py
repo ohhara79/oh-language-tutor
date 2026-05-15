@@ -106,3 +106,38 @@ async def test_delete_async_removes_entry(tmp_path: Path) -> None:
 async def test_delete_async_unknown_id_returns_false(tmp_path: Path) -> None:
     store = _store(tmp_path)
     assert await store.delete_async('nope') is False
+
+
+def test_load_tolerates_null_explanation(tmp_path: Path) -> None:
+    path = tmp_path / 'tutor.json'
+    path.write_text(
+        '[{"id": "u-1", "raw": "unexplained", "explanation": null}]',
+        encoding='utf-8',
+    )
+    store = TutorStore(path)
+    loaded = store.load()
+    assert len(loaded) == 1
+    assert loaded[0].explanation is None
+
+
+def test_load_tolerates_missing_explanation_key(tmp_path: Path) -> None:
+    path = tmp_path / 'tutor.json'
+    path.write_text('[{"id": "u-1", "raw": "unexplained"}]', encoding='utf-8')
+    store = TutorStore(path)
+    loaded = store.load()
+    assert len(loaded) == 1
+    assert loaded[0].explanation is None
+
+
+async def test_update_explanation_async_sets_explanation(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    await store.append_async(TutorEntry(raw='raw', id='to-explain'))
+    updated = await store.update_explanation_async('to-explain', 'the meaning')
+    assert updated is True
+    loaded = store.load()
+    assert loaded[0].explanation == 'the meaning'
+
+
+async def test_update_explanation_async_unknown_returns_false(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    assert await store.update_explanation_async('missing', 'x') is False

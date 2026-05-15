@@ -19,7 +19,7 @@
     <div id="thread-topbar-actions"></div>
   </div>
 
-  <main id="stream-pane" sse-swap="explanation" hx-swap="beforeend">
+  <main id="stream-pane" sse-swap="entry_appended" hx-swap="beforeend">
     <div id="load-older-indicator" class="htmx-indicator" aria-live="polite">Loading older&hellip;</div>
     {% if has_more %}
     <div id="load-older-sentinel"
@@ -31,7 +31,7 @@
     {% endif %}
     {% for entry in entries %}
       {% set raw_escaped = entry.raw | e %}
-      {% set explanation_html = render_markdown(entry.explanation) %}
+      {% set explanation_html = render_markdown(entry.explanation) if entry.explanation is not none else '' %}
       {% include 'partials/line.html' %}
     {% endfor %}
   </main>
@@ -47,7 +47,7 @@
   <div id="toast-container" aria-live="polite"></div>
 
   <div id="sse-buffer"
-       sse-swap="thread_chunk,thread_done,tutor_entry_removed,error"
+       sse-swap="thread_chunk,thread_done,tutor_entry_removed,entry_explained,error"
        hx-swap="beforeend"
        style="display:none"></div>
 

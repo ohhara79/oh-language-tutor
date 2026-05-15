@@ -8,6 +8,6 @@
 {% endif %}
 {% for entry in entries %}
   {% set raw_escaped = entry.raw | e %}
-  {% set explanation_html = render_markdown(entry.explanation) %}
+  {% set explanation_html = render_markdown(entry.explanation) if entry.explanation is not none else '' %}
   {% include 'partials/line.html' %}
 {% endfor %}

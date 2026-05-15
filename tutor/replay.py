@@ -1,23 +1,13 @@
-"""Replay helpers used when a Claude session resume fails.
-
-All fallback-related behaviour lives here.  To remove the feature,
-delete this module and the short call to ``connect_with_fallback`` in
-``terminal.py`` / ``tui.py`` and the ``except`` / retry block in
-``thread_pool.send_message`` that import from it.
-"""
+"""Replay helpers used when a thread Claude session resume fails."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from claude_agent_sdk import ClaudeSDKClient
-
 if TYPE_CHECKING:
     from typing import TextIO
 
-    from claude_agent_sdk import ClaudeAgentOptions
-
-    from tutor.types import OutputSink, ThreadMessage, TutorEntry
+    from tutor.types import OutputSink, ThreadMessage
 
 
 REPLAY_MAX_TURNS = 100
@@ -70,47 +60,3 @@ def notify_fallback(log: TextIO, sink: OutputSink, *, total: int, replayed: int)
     msg = f'resume failed; replayed {replayed}/{total} turns into a new session'
     log.write(f'=== {msg} ===\n')
     sink.on_error(msg)
-
-
-async def connect_with_fallback(
-    primary: ClaudeAgentOptions,
-    *,
-    fresh: ClaudeAgentOptions,
-    tutor_entries: list[TutorEntry],
-    sink: OutputSink,
-    log: TextIO,
-) -> ClaudeSDKClient:
-    """Enter a ``ClaudeSDKClient`` session, falling back and replaying on resume failure.
-
-    Try to enter ``ClaudeSDKClient(primary)``.  If that fails and
-    *primary* was a resume attempt (``primary.resume is not None``),
-    retry with *fresh*, replay the last ``REPLAY_MAX_TURNS`` entries of
-    *tutor_entries* as a single preamble message, and emit a one-line
-    fallback notice via ``notify_fallback``.
-
-    If *primary* was not a resume attempt, any failure is raised
-    verbatim (no fallback, no replay).
-
-    The caller is responsible for calling ``__aexit__`` on the returned
-    client when done.
-    """
-    client = ClaudeSDKClient(options=primary)
-    try:
-        await client.__aenter__()
-    except Exception:
-        if primary.resume is None:
-            raise
-    else:
-        return client
-
-    fresh_client = ClaudeSDKClient(options=fresh)
-    await fresh_client.__aenter__()
-    all_pairs = [(e.raw, e.explanation) for e in tutor_entries]
-    pairs = all_pairs[-REPLAY_MAX_TURNS:]
-    if pairs:
-        preamble = build_preamble(pairs)
-        await fresh_client.query(preamble)
-        async for _ in fresh_client.receive_response():
-            pass
-    notify_fallback(log, sink, total=len(all_pairs), replayed=len(pairs))
-    return fresh_client

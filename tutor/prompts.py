@@ -16,12 +16,14 @@ if TYPE_CHECKING:
 # safety margin for SDK framing and multi-byte UTF-8.
 MAX_SYSTEM_PROMPT_BYTES = 96 * 1024
 
+# How many preceding raw lines accompany each Explain click as context.
+EXPLAIN_CONTEXT_K = 100
+
 
 def build_base_system_prompt(
     source_language: str,
     target_language: str,
     level: str,
-    skip_token: str,
 ) -> str:
     """Build the audience/format half of the system prompt from CLI flags."""
     return (
@@ -29,19 +31,9 @@ def build_base_system_prompt(
         f'speaker learn {source_language}. '
         f"The learner's level is {level}.\n"
         '\n'
-        'Each user message is ONE raw line of text from a stream that may or may '
-        f'not contain actual {source_language} content worth explaining. '
-        'The stream may also include unrelated noise \u2014 engine warnings, log '
-        'banners, timestamps, debug prints \u2014 which should be ignored.\n'
-        '\n'
-        'Decision rule:\n'
-        '\n'
-        f'- If the line is NOT real {source_language} content worth explaining '
-        '(noise, metadata, technical output, unrelated output), respond with '
-        f'EXACTLY the single word `{skip_token}` and nothing else. Do not wrap '
-        'it, do not add punctuation, do not explain the decision \u2014 just '
-        f'`{skip_token}`.\n'
-        f'- Otherwise, produce a short explanation tailored to a {level} '
+        'Each user message contains a recent context window followed by a '
+        'single target line, in the format described below. Produce a short '
+        f'explanation of the target line tailored to a {level} '
         f'{source_language} learner whose native language is {target_language}.\n'
         '\n'
         'Explanation structure (skip any empty section, stay under 100 words):\n'
@@ -51,7 +43,7 @@ def build_base_system_prompt(
         '  \U0001f4a1 Expression: <one idiom/slang/grammar pattern, explained in '
         f'{target_language}>\n'
         '  \U0001f3ac Context:    <one sentence on what the speaker means in THIS '
-        "moment, referencing earlier lines you've seen in this conversation>\n"
+        'moment, referencing the surrounding context lines>\n'
         '\n'
         'Level guidance:\n'
         f'- beginner:     write almost everything in {target_language}; simple '
@@ -60,10 +52,6 @@ def build_base_system_prompt(
         'slang, and cultural references.\n'
         f'- advanced:     explain in plain {source_language}; only use '
         f'{target_language} for subtle points.\n'
-        '\n'
-        'You have a persistent conversation history across every line sent this '
-        'session, so refer back to prior context naturally (resolving '
-        '"he"/"she"/"they", noticing callbacks, etc.).\n'
     )
 
 
@@ -73,7 +61,6 @@ def build_system_prompt(args: argparse.Namespace) -> str:
         args.source_language,
         args.target_language,
         args.level,
-        args.skip_token,
     )
     if args.extra_system_prompt:
         path = Path(args.extra_system_prompt).expanduser()
@@ -136,6 +123,14 @@ def _render_thread_system_prompt(
         '\n'
         "Now wait for the learner's question about the marked line.\n"
     )
+
+
+def build_explain_user_message(target: str, context: list[str]) -> str:
+    """Render the per-click Explain user message: context lines + target line."""
+    if context:
+        context_block = '\n'.join(f'> {line}' for line in context)
+        return f'Recent context (oldest first):\n---\n{context_block}\n---\nExplain this line:\n{target}\n'
+    return f'Explain this line:\n{target}\n'
 
 
 def _truncate_to_utf8_bytes(text: str, limit: int) -> str:

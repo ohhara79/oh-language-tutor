@@ -13,7 +13,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 import uvicorn
-from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    TextBlock,
+)
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,21 +26,17 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from tutor.core import stdin_loop
 from tutor.markdown_util import render_markdown
-from tutor.prompts import build_system_prompt
-from tutor.replay import connect_with_fallback
-from tutor.session import load_saved_session_id
+from tutor.prompts import EXPLAIN_CONTEXT_K, build_explain_user_message, build_system_prompt
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore, new_thread_id
 from tutor.tutor_store import TutorStore
-from tutor.types import ThreadMeta, format_created_at_utc
+from tutor.types import ThreadMeta, TutorEntry, format_created_at_utc
 from tutor.web_sink import WebSink
 
 if TYPE_CHECKING:
     import argparse
     from collections.abc import AsyncIterator
     from typing import TextIO
-
-    from claude_agent_sdk import ClaudeSDKClient
 
 _TEMPLATES_DIR = Path(__file__).parent / 'templates'
 _STATIC_DIR = Path(__file__).parent / 'static'
@@ -49,13 +50,12 @@ class WebContext:
     args: argparse.Namespace
     log: TextIO
     filter_re: re.Pattern[str] | None
-    session_path: Path
     stop_event: asyncio.Event
     tutor_store: TutorStore
     thread_store: ThreadStore
     sink: WebSink
     pool: FollowupThreadPool
-    client: ClaudeSDKClient
+    explain_options: ClaudeAgentOptions
     env: Environment
     version: str  # cache-buster for static assets
 
@@ -88,6 +88,17 @@ def build_template_env() -> Environment:
     globals_['format_created_at_utc'] = format_created_at_utc
     globals_['thread_heading'] = thread_heading
     return env
+
+
+async def _run_explain(options: ClaudeAgentOptions, user_msg: str) -> str:
+    """Run one short-lived Claude session and return the joined assistant text."""
+    buf: list[str] = []
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(user_msg)
+        async for msg in client.receive_response():
+            if isinstance(msg, AssistantMessage):
+                buf.extend(b.text for b in msg.content if isinstance(b, TextBlock))
+    return ''.join(buf).strip()
 
 
 def build_app(ctx: WebContext) -> FastAPI:
@@ -231,6 +242,32 @@ def build_app(ctx: WebContext) -> FastAPI:
         await ctx.pool.delete_tutor_entry(anchor_id)
         return Response(status_code=204)
 
+    @app.post('/commands/explain', response_class=HTMLResponse)
+    async def explain(  # pyright: ignore[reportUnusedFunction]
+        entry_id: Annotated[str, Form()],
+    ) -> HTMLResponse:
+        entries = ctx.tutor_store.load()
+        idx = next((i for i, e in enumerate(entries) if e.id == entry_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail='entry not found')
+        target = entries[idx]
+        if target.explanation is not None:
+            return HTMLResponse(content=ctx.sink.render_line(target))
+        context_raws = [e.raw for e in entries[max(0, idx - EXPLAIN_CONTEXT_K) : idx]]
+        user_msg = build_explain_user_message(target.raw, context_raws)
+        try:
+            explanation = await _run_explain(ctx.explain_options, user_msg)
+        except Exception as exc:
+            ctx.sink.on_error(f'explain failed: {exc}')
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if not explanation:
+            ctx.sink.on_error('explain produced empty response')
+            raise HTTPException(status_code=502, detail='empty explanation')
+        await ctx.tutor_store.update_explanation_async(entry_id, explanation)
+        updated = TutorEntry(raw=target.raw, explanation=explanation, id=target.id)
+        ctx.sink.on_entry_explained(updated)
+        return HTMLResponse(content=ctx.sink.render_line(updated))
+
     return app
 
 
@@ -266,24 +303,15 @@ async def run_web(args: argparse.Namespace) -> int:
         raise SystemExit(msg) from exc
 
     system_prompt = build_system_prompt(args)
-    resume_id = load_saved_session_id(args)
 
     state_dir = Path(args.state_dir).expanduser()
     state_dir.mkdir(parents=True, exist_ok=True)
     log_path = state_dir / 'tutor.log'
-    session_path = state_dir / 'session.id'
 
-    options = ClaudeAgentOptions(
+    explain_options = ClaudeAgentOptions(
         system_prompt=system_prompt,
         model=args.explain_model,
         allowed_tools=[],
-        resume=resume_id,
-    )
-    options_fresh = ClaudeAgentOptions(
-        system_prompt=system_prompt,
-        model=args.explain_model,
-        allowed_tools=[],
-        resume=None,
     )
 
     stop_event = asyncio.Event()
@@ -291,7 +319,7 @@ async def run_web(args: argparse.Namespace) -> int:
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
         log.write(
             f'\n=== session start explain_model={args.explain_model} '
-            f'ask_model={args.ask_model} resume={resume_id or "-"} '
+            f'ask_model={args.ask_model} '
             f'bind={args.web_host}:{args.web_port} ===\n',
         )
 
@@ -300,13 +328,6 @@ async def run_web(args: argparse.Namespace) -> int:
         env = build_template_env()
         sink = WebSink(log=log, tutor_store=tutor_store, env=env)
 
-        client = await connect_with_fallback(
-            options,
-            fresh=options_fresh,
-            tutor_entries=tutor_store.load() if resume_id else [],
-            sink=sink,
-            log=log,
-        )
         pool = FollowupThreadPool(
             model=args.ask_model,
             sink=sink,
@@ -322,13 +343,12 @@ async def run_web(args: argparse.Namespace) -> int:
             args=args,
             log=log,
             filter_re=filter_re,
-            session_path=session_path,
             stop_event=stop_event,
             tutor_store=tutor_store,
             thread_store=thread_store,
             sink=sink,
             pool=pool,
-            client=client,
+            explain_options=explain_options,
             env=env,
             version=str(int(time.time())),
         )
@@ -338,7 +358,7 @@ async def run_web(args: argparse.Namespace) -> int:
         sink.on_thread_list(pool.list_threads())
 
         stdin_task = asyncio.create_task(
-            stdin_loop(client, sink, filter_re, stop_event, session_path),
+            stdin_loop(sink, filter_re, stop_event),
         )
 
         app = build_app(ctx)
@@ -377,7 +397,6 @@ async def run_web(args: argparse.Namespace) -> int:
                 await stdin_task
             await pool.close_all()
             await sink.flush_pending_writes()
-            await client.__aexit__(None, None, None)
             log.write('=== session end ===\n')
 
     return 0

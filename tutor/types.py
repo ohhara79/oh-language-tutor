@@ -25,10 +25,13 @@ class LineRecord:
 
 @dataclass(slots=True)
 class TutorEntry:
-    """One explained line persisted for left-pane restoration."""
+    """One stdin line persisted for left-pane restoration.
+
+    ``explanation`` is None until the user clicks Explain in the UI.
+    """
 
     raw: str
-    explanation: str
+    explanation: str | None = None
     id: str = field(default_factory=lambda: uuid4().hex)
 
 
@@ -74,8 +77,12 @@ class OutputSink(Protocol):
         """A new raw line arrived from stdin (passthrough display)."""
         ...
 
-    def on_explanation(self, raw: str, text: str) -> None:
-        """An explanation was produced for a line."""
+    def on_entry_appended(self, entry: TutorEntry) -> None:
+        """A new stdin line was persisted as an unexplained entry."""
+        ...
+
+    def on_entry_explained(self, entry: TutorEntry) -> None:
+        """An entry's explanation was produced and persisted."""
         ...
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:

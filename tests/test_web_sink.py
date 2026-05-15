@@ -7,7 +7,7 @@ import io
 from typing import TYPE_CHECKING
 
 from tutor.tutor_store import TutorStore
-from tutor.types import ThreadMessage, ThreadMeta
+from tutor.types import ThreadMessage, ThreadMeta, TutorEntry
 from tutor.web_sink import _SUBSCRIBER_QUEUE_MAX, WebSink
 
 if TYPE_CHECKING:
@@ -59,21 +59,39 @@ def test_on_raw_line_writes_log_only_no_broadcast(tmp_path: Path, jinja_env: Env
     assert q.empty()
 
 
-async def test_on_explanation_persists_and_broadcasts(tmp_path: Path, jinja_env: Environment):
-    sink, log, store = _sink(tmp_path, jinja_env)
+async def test_on_entry_appended_persists_and_broadcasts(tmp_path: Path, jinja_env: Environment):
+    sink, _, store = _sink(tmp_path, jinja_env)
     q = sink.subscribe()
-    sink.on_explanation('raw', 'the *meaning*')
+    entry = TutorEntry(raw='raw line', id='id-1')
+    sink.on_entry_appended(entry)
     await sink.flush_pending_writes()
 
     event, fragment = await q.get()
-    assert event == 'explanation'
+    assert event == 'entry_appended'
     assert 'class="line"' in fragment
-    assert 'raw' in fragment
-    assert '--- explanation for: raw' in log.getvalue()
+    assert 'id="line-id-1"' in fragment
+    assert 'raw line' in fragment
+    assert 'Explain' in fragment  # unexplained variant shows Explain button
 
     entries = store.load()
     assert len(entries) == 1
-    assert entries[0].raw == 'raw'
+    assert entries[0].raw == 'raw line'
+    assert entries[0].explanation is None
+
+
+async def test_on_entry_explained_broadcasts_oob_swap(tmp_path: Path, jinja_env: Environment):
+    sink, log, store = _sink(tmp_path, jinja_env)
+    q = sink.subscribe()
+    entry = TutorEntry(raw='raw', explanation='the *meaning*', id='id-2')
+    sink.on_entry_explained(entry)
+
+    event, fragment = await q.get()
+    assert event == 'entry_explained'
+    assert 'id="line-id-2"' in fragment
+    assert 'hx-swap-oob="outerHTML"' in fragment
+    assert '--- explanation for: raw' in log.getvalue()
+    # Sink should not persist on its own — endpoint owns persistence.
+    assert store.load() == []
 
 
 async def test_on_thread_chunk_broadcasts_escaped_fragment(tmp_path: Path, jinja_env: Environment):
@@ -143,6 +161,24 @@ async def test_on_error_renders_toast(tmp_path: Path, jinja_env: Environment):
     assert 'toast' in fragment
     assert 'bad thing' in fragment
     assert '[error] bad thing' in log.getvalue()
+
+
+# -- render_line -------------------------------------------------------------
+
+
+def test_render_line_unexplained_shows_explain_button(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    html = sink.render_line(TutorEntry(raw='raw', id='x'))
+    assert 'Explain' in html
+    assert 'Ask' not in html
+
+
+def test_render_line_explained_shows_ask_button(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    html = sink.render_line(TutorEntry(raw='raw', explanation='meaning', id='x'))
+    assert 'Ask' in html
+    assert 'Explain' not in html
+    assert 'meaning' in html
 
 
 # -- subscriber backpressure -------------------------------------------------

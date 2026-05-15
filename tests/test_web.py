@@ -9,7 +9,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import httpx
+import pytest
+from claude_agent_sdk import ClaudeAgentOptions
 
+from tests.conftest import FakeClaudeSDKClient, make_assistant, make_result
+from tutor import web as web_mod
 from tutor.thread_store import ThreadStore
 from tutor.tutor_store import TutorStore
 from tutor.types import ThreadMessage, ThreadMeta, TutorEntry
@@ -18,6 +22,8 @@ from tutor.web_sink import WebSink
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from tests.conftest import FakeClaudeSDKClientFactory
 
 
 # -- thread_heading ----------------------------------------------------------
@@ -164,17 +170,21 @@ def _build_ctx(tmp_path: Path) -> tuple[WebContext, _FakePool]:
     )
 
     stop = asyncio.Event()
+    explain_options = ClaudeAgentOptions(
+        system_prompt='sys',
+        model='test-model',
+        allowed_tools=[],
+    )
     ctx = WebContext(
         args=args,
         log=log,
         filter_re=None,
-        session_path=tmp_path / 'session.id',
         stop_event=stop,
         tutor_store=tutor_store,
         thread_store=thread_store,
         sink=sink,
         pool=pool,  # pyright: ignore[reportArgumentType]
-        client=None,  # pyright: ignore[reportArgumentType]
+        explain_options=explain_options,
         env=env,
         version='test-v',
     )
@@ -260,6 +270,125 @@ async def test_post_delete_tutor_entry_returns_204(tmp_path: Path):
         r = await client.post('/commands/delete_tutor_entry', data={'anchor_id': 'a-1'})
     assert r.status_code == 204
     assert pool.deleted_tutor == ['a-1']
+
+
+async def test_post_explain_unknown_entry_returns_404(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.post('/commands/explain', data={'entry_id': 'missing'})
+    assert r.status_code == 404
+
+
+async def test_post_explain_already_explained_is_idempotent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    # The fixture already inserted an explained entry id=a-1. Verify that
+    # POSTing explain on it returns the rendered partial without invoking
+    # the Claude client at all.
+    called = False
+
+    def factory(*, options: Any = None) -> FakeClaudeSDKClient:
+        nonlocal called
+        called = True
+        msg = 'should not be called'
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', factory)
+    async with _client(ctx) as client:
+        r = await client.post('/commands/explain', data={'entry_id': 'a-1'})
+    assert r.status_code == 200
+    assert called is False
+    assert 'meaning' in r.text  # explained partial
+
+
+async def test_post_explain_happy_path(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.tutor_store.append(TutorEntry(raw='target raw', id='u-1'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient([[make_assistant('the explanation'), make_result('sid')]]),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post('/commands/explain', data={'entry_id': 'u-1'})
+    assert r.status_code == 200
+    assert 'the explanation' in r.text
+    assert 'Ask' in r.text  # response is the explained variant
+
+    # Persisted explanation
+    [stored_explained] = [e for e in ctx.tutor_store.load() if e.id == 'u-1']
+    assert stored_explained.explanation == 'the explanation'
+
+    # Fresh subprocess actually spawned with target line and prior context.
+    assert len(fake_client_factory.constructed) == 1
+    [sent_msg] = fake_client_factory.constructed[0].queries
+    assert 'target raw' in sent_msg
+    assert 'hi' in sent_msg  # the fixture's pre-existing a-1 entry as context
+
+
+async def test_post_explain_empty_response_returns_502(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.tutor_store.append(TutorEntry(raw='target', id='u-2'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient([[make_assistant(''), make_result('sid')]]),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post('/commands/explain', data={'entry_id': 'u-2'})
+    assert r.status_code == 502
+
+
+async def test_post_explain_client_failure_returns_500(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.tutor_store.append(TutorEntry(raw='target', id='u-3'))
+    fake_client_factory.push(FakeClaudeSDKClient(raise_on_query=RuntimeError('boom')))
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post('/commands/explain', data={'entry_id': 'u-3'})
+    assert r.status_code == 500
+
+
+async def test_post_explain_uses_context_window(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    # Seed three preceding raws ahead of the target.
+    ctx.tutor_store.append(TutorEntry(raw='ctx-1', id='c1'))
+    ctx.tutor_store.append(TutorEntry(raw='ctx-2', id='c2'))
+    ctx.tutor_store.append(TutorEntry(raw='target', id='u-4'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient([[make_assistant('explained'), make_result('sid')]]),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post('/commands/explain', data={'entry_id': 'u-4'})
+    assert r.status_code == 200
+    sent = fake_client_factory.constructed[0].queries[0]
+    assert 'ctx-1' in sent
+    assert 'ctx-2' in sent
+    assert 'target' in sent
+    # The pre-existing fixture entry id=a-1 ('hi') sits before the seeded
+    # context entries but inside the 100-line window, so it shows up too.
+    assert 'hi' in sent
 
 
 async def test_events_endpoint_returns_sse_response(tmp_path: Path):

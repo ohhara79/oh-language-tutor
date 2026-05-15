@@ -46,7 +46,7 @@ class TutorStore:
 
         try:
             data = json.loads(self._path.read_text(encoding='utf-8'))
-            entries = [TutorEntry(raw=e['raw'], explanation=e['explanation'], id=e['id']) for e in data]
+            entries = [TutorEntry(raw=e['raw'], explanation=e.get('explanation'), id=e['id']) for e in data]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             sys.stderr.write(f'[oh-language-tutor] corrupt tutor file {self._path}: {exc}\n')
             return []
@@ -86,6 +86,17 @@ class TutorStore:
                 return False
             await asyncio.to_thread(self._write, kept)
             return True
+
+    async def update_explanation_async(self, entry_id: str, explanation: str) -> bool:
+        """Set the explanation for *entry_id*. Returns False if not found."""
+        async with self._get_write_lock():
+            entries = self.load()
+            for e in entries:
+                if e.id == entry_id:
+                    e.explanation = explanation
+                    await asyncio.to_thread(self._write, entries)
+                    return True
+            return False
 
     def index_of(self, anchor_id: str) -> int | None:
         """Return the current array position of *anchor_id*, or None."""

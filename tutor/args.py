@@ -10,7 +10,6 @@ DEFAULT_STATE_DIR = PROJECT_DIR / 'state'
 DEFAULT_EXPLAIN_MODEL = 'claude-sonnet-4-6'
 DEFAULT_ASK_MODEL = 'claude-opus-4-7'
 DEFAULT_LEVEL = 'intermediate'
-DEFAULT_SKIP_TOKEN = 'SKIP'  # noqa: S105
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -41,12 +40,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         '--filter-regex',
-        help='Only send lines matching this regex to the LLM. Omit to send every line.',
-    )
-    p.add_argument(
-        '--skip-token',
-        default=DEFAULT_SKIP_TOKEN,
-        help='Sentinel word the LLM emits for non-content lines (default: %(default)s).',
+        help='Only keep stdin lines matching this regex. Omit to keep every line.',
     )
     p.add_argument(
         '--explain-model',
@@ -62,15 +56,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         '--state-dir',
         default=str(DEFAULT_STATE_DIR),
         help='Directory for all persistent state files (default: %(default)s).',
-    )
-    p.add_argument(
-        '--new-session',
-        action='store_true',
-        help='Ignore any saved session id and start fresh.',
-    )
-    p.add_argument(
-        '--resume-id',
-        help='Resume a specific session id (overrides --session-file).',
     )
     p.add_argument(
         '--web-host',

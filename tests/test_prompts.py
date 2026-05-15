@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from tutor.prompts import (
+    EXPLAIN_CONTEXT_K,
     MAX_SYSTEM_PROMPT_BYTES,
     _truncate_to_utf8_bytes,
     build_base_system_prompt,
+    build_explain_user_message,
     build_system_prompt,
     build_thread_system_prompt,
 )
@@ -28,22 +30,20 @@ def _base_ns(
         source_language='English',
         target_language='Korean',
         level='intermediate',
-        skip_token='SKIP',
         extra_system_prompt=extra_system_prompt,
     )
 
 
 def test_build_base_system_prompt_contains_core_fields() -> None:
-    prompt = build_base_system_prompt('English', 'Korean', 'intermediate', 'SKIP')
+    prompt = build_base_system_prompt('English', 'Korean', 'intermediate')
     assert 'English' in prompt
     assert 'Korean' in prompt
     assert 'intermediate' in prompt
-    assert 'SKIP' in prompt
 
 
 def test_build_system_prompt_without_extra_equals_base() -> None:
     args = _base_ns()
-    assert build_system_prompt(args) == build_base_system_prompt('English', 'Korean', 'intermediate', 'SKIP')
+    assert build_system_prompt(args) == build_base_system_prompt('English', 'Korean', 'intermediate')
 
 
 def test_build_system_prompt_appends_extra_file(tmp_path: Path) -> None:
@@ -73,13 +73,34 @@ def test_build_system_prompt_oversized_extra_raises(tmp_path: Path) -> None:
     assert 'execve per-arg cap' in str(excinfo.value)
 
 
+def test_explain_context_k_is_positive() -> None:
+    assert EXPLAIN_CONTEXT_K > 0
+
+
+def test_build_explain_user_message_no_context() -> None:
+    msg = build_explain_user_message('target line', [])
+    assert 'target line' in msg
+    assert 'Explain this line:' in msg
+    assert 'Recent context' not in msg
+
+
+def test_build_explain_user_message_with_context_preserves_order() -> None:
+    msg = build_explain_user_message('the target', ['first', 'second', 'third'])
+    assert 'Recent context' in msg
+    idx_first = msg.index('first')
+    idx_second = msg.index('second')
+    idx_third = msg.index('third')
+    idx_target = msg.index('the target')
+    assert idx_first < idx_second < idx_third < idx_target
+
+
 def test_truncate_to_utf8_bytes_short_passthrough() -> None:
     assert _truncate_to_utf8_bytes('hello', 100) == 'hello'
 
 
 def test_truncate_to_utf8_bytes_ascii_truncates_with_ellipsis() -> None:
     result = _truncate_to_utf8_bytes('A' * 1000, 50)
-    assert result.endswith('\u2026')
+    assert result.endswith('…')
     assert result.startswith('A' * 50)
 
 
@@ -89,8 +110,8 @@ def test_truncate_to_utf8_bytes_multibyte_boundary_safe() -> None:
     src = '가' * 100
     result = _truncate_to_utf8_bytes(src, 50)
     # Must decode cleanly — an invalid boundary would have raised by now.
-    assert result.endswith('\u2026')
-    assert len(result.encode('utf-8')) <= 50 + len('\u2026'.encode())
+    assert result.endswith('…')
+    assert len(result.encode('utf-8')) <= 50 + len('…'.encode())
 
 
 def test_build_thread_system_prompt_renders_context_in_order() -> None:

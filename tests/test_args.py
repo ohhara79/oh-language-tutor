@@ -7,7 +7,6 @@ import pytest
 from tutor.args import (
     DEFAULT_ASK_MODEL,
     DEFAULT_EXPLAIN_MODEL,
-    DEFAULT_SKIP_TOKEN,
     parse_args,
 )
 
@@ -35,13 +34,10 @@ def test_missing_target_language_exits() -> None:
 def test_defaults() -> None:
     args = parse_args(_required())
     assert args.level == 'intermediate'
-    assert args.skip_token == DEFAULT_SKIP_TOKEN
     assert args.explain_model == DEFAULT_EXPLAIN_MODEL
     assert args.ask_model == DEFAULT_ASK_MODEL
     assert args.web_host == '127.0.0.1'
     assert args.web_port == 8000
-    assert args.new_session is False
-    assert args.resume_id is None
     assert args.extra_system_prompt is None
     assert args.filter_regex is None
 
@@ -66,13 +62,3 @@ def test_web_port_is_coerced_to_int() -> None:
 def test_web_port_rejects_non_integer() -> None:
     with pytest.raises(SystemExit):
         parse_args([*_required(), '--web-port', 'not-a-number'])
-
-
-def test_new_session_flag_sets_true() -> None:
-    args = parse_args([*_required(), '--new-session'])
-    assert args.new_session is True
-
-
-def test_resume_id_stored() -> None:
-    args = parse_args([*_required(), '--resume-id', 'abc123'])
-    assert args.resume_id == 'abc123'
