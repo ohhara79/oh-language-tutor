@@ -9,13 +9,19 @@
             hx-target="#thread-conversation"
             hx-swap="innerHTML">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-ask">Ask</button>
+        <button type="submit" class="btn btn-ask" hx-disabled-elt="this">
+          <span class="btn-label-idle">Ask</span>
+          <span class="btn-label-busy">Opening…</span>
+        </button>
       </form>
       <form hx-post="/commands/delete_tutor_entry"
             hx-confirm="Delete this line and its threads?"
             hx-swap="none">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-del">Delete</button>
+        <button type="submit" class="btn btn-del" hx-disabled-elt="this">
+          <span class="btn-label-idle">Delete</span>
+          <span class="btn-label-busy">Deleting…</span>
+        </button>
       </form>
     </div>
     {% else %}
@@ -24,13 +30,19 @@
             hx-target="#line-{{ entry.id }}"
             hx-swap="outerHTML">
         <input type="hidden" name="entry_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-ask">Explain</button>
+        <button type="submit" class="btn btn-ask" hx-disabled-elt="this">
+          <span class="btn-label-idle">Explain</span>
+          <span class="btn-label-busy">Explaining…</span>
+        </button>
       </form>
       <form hx-post="/commands/delete_tutor_entry"
             hx-confirm="Delete this line?"
             hx-swap="none">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-del">Delete</button>
+        <button type="submit" class="btn btn-del" hx-disabled-elt="this">
+          <span class="btn-label-idle">Delete</span>
+          <span class="btn-label-busy">Deleting…</span>
+        </button>
       </form>
     </div>
     {% endif %}

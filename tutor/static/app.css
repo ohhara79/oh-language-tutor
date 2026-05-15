@@ -101,6 +101,22 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .btn-ask { color: #0b6bcb; border-color: #8ab; }
 .btn-send { padding: 0.5rem 0.75rem; flex-shrink: 0; }
 
+.btn .btn-label-busy { display: none; }
+.btn.htmx-request .btn-label-idle { display: none; }
+.btn.htmx-request .btn-label-busy { display: inline; }
+
+.btn:disabled,
+.btn.htmx-request {
+    cursor: not-allowed;
+    color: #888;
+    border-color: #ccc;
+    background: rgba(128, 128, 128, 0.08);
+}
+.btn:disabled:hover,
+.btn.htmx-request:hover {
+    background: rgba(128, 128, 128, 0.08);
+}
+
 /* ---------- Thread list ---------- */
 
 .thread-list {
@@ -238,6 +254,8 @@ body.view-thread #thread-conversation { display: flex; }
     .btn { border-color: #555; }
     .btn-del { color: #ff8a8a; border-color: #855; }
     .btn-ask { color: #9bf; border-color: #488; }
+    .btn:disabled,
+    .btn.htmx-request { color: #888; border-color: #555; }
     .thread-list li.thread-item a:hover { border-color: #555; }
     .thread-conversation { border-color: #444; }
     .thread-header { border-color: #444; }
