@@ -7,18 +7,20 @@
     <div class="line-actions">
       <form hx-post="/commands/open_thread"
             hx-target="#thread-conversation"
-            hx-swap="innerHTML">
+            hx-swap="innerHTML"
+            hx-disabled-elt="find button">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-ask" hx-disabled-elt="this">
+        <button type="submit" class="btn btn-ask">
           <span class="btn-label-idle">Ask</span>
           <span class="btn-label-busy">Opening…</span>
         </button>
       </form>
       <form hx-post="/commands/delete_tutor_entry"
             hx-confirm="Delete this line and its threads?"
-            hx-swap="none">
+            hx-swap="none"
+            hx-disabled-elt="find button">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-del" hx-disabled-elt="this">
+        <button type="submit" class="btn btn-del">
           <span class="btn-label-idle">Delete</span>
           <span class="btn-label-busy">Deleting…</span>
         </button>
@@ -28,18 +30,20 @@
     <div class="line-actions">
       <form hx-post="/commands/explain"
             hx-target="#line-{{ entry.id }}"
-            hx-swap="outerHTML">
+            hx-swap="outerHTML"
+            hx-disabled-elt="find button">
         <input type="hidden" name="entry_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-ask" hx-disabled-elt="this">
+        <button type="submit" class="btn btn-ask">
           <span class="btn-label-idle">Explain</span>
           <span class="btn-label-busy">Explaining…</span>
         </button>
       </form>
       <form hx-post="/commands/delete_tutor_entry"
             hx-confirm="Delete this line?"
-            hx-swap="none">
+            hx-swap="none"
+            hx-disabled-elt="find button">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-del" hx-disabled-elt="this">
+        <button type="submit" class="btn btn-del">
           <span class="btn-label-idle">Delete</span>
           <span class="btn-label-busy">Deleting…</span>
         </button>
