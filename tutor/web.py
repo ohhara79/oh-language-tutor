@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 _TEMPLATES_DIR = Path(__file__).parent / 'templates'
 _STATIC_DIR = Path(__file__).parent / 'static'
-_STREAM_PAGE_N = 50
+_STREAM_PAGE_N = 500
 
 
 @dataclass
