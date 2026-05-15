@@ -258,7 +258,7 @@ def _uvicorn_log_config() -> dict[str, Any]:
 
 
 async def run_web(args: argparse.Namespace) -> int:
-    """Run in browser-UI mode (``--web``). Serves a FastAPI app on localhost."""
+    """Run the browser UI. Serves a FastAPI app on localhost."""
     try:
         filter_re = re.compile(args.filter_regex) if args.filter_regex else None
     except re.PatternError as exc:
@@ -290,7 +290,7 @@ async def run_web(args: argparse.Namespace) -> int:
 
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
         log.write(
-            f'\n=== session start mode=web explain_model={args.explain_model} '
+            f'\n=== session start explain_model={args.explain_model} '
             f'ask_model={args.ask_model} resume={resume_id or "-"} '
             f'bind={args.web_host}:{args.web_port} ===\n',
         )

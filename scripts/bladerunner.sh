@@ -8,5 +8,4 @@ scummvm 2>&1 | \
         --extra-system-prompt extras/bladerunner.md \
         --filter-regex '^\w+: "' \
         --state-dir state/bladerunner \
-        --web \
 

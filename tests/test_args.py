@@ -40,8 +40,6 @@ def test_defaults() -> None:
     assert args.ask_model == DEFAULT_ASK_MODEL
     assert args.web_host == '127.0.0.1'
     assert args.web_port == 8000
-    assert args.tui is False
-    assert args.web is False
     assert args.new_session is False
     assert args.resume_id is None
     assert args.extra_system_prompt is None
@@ -57,11 +55,6 @@ def test_level_accepts_valid_choices(level: str) -> None:
 def test_level_rejects_invalid_choice() -> None:
     with pytest.raises(SystemExit):
         parse_args([*_required(), '--level', 'fluent'])
-
-
-def test_tui_and_web_are_mutually_exclusive() -> None:
-    with pytest.raises(SystemExit):
-        parse_args([*_required(), '--tui', '--web'])
 
 
 def test_web_port_is_coerced_to_int() -> None:

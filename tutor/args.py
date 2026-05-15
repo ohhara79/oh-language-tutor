@@ -73,16 +73,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help='Resume a specific session id (overrides --session-file).',
     )
     p.add_argument(
-        '--tui',
-        action='store_true',
-        help='Launch the interactive Textual TUI instead of plain terminal output.',
-    )
-    p.add_argument(
-        '--web',
-        action='store_true',
-        help='Launch the browser UI (FastAPI server) instead of plain terminal output.',
-    )
-    p.add_argument(
         '--web-host',
         default='127.0.0.1',
         help='Web UI bind address (default: %(default)s).',
@@ -93,7 +83,4 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         help='Web UI bind port (default: %(default)s).',
     )
-    args = p.parse_args(argv)
-    if args.tui and args.web:
-        p.error('--tui and --web are mutually exclusive')
-    return args
+    return p.parse_args(argv)

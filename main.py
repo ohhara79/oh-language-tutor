@@ -14,33 +14,15 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from tutor import run_terminal
 from tutor.args import parse_args
+from tutor.web import run_web
 
 
 def main() -> None:
     """Entry point for oh-language-tutor."""
     args = parse_args()
-    runner = run_terminal
-    if args.tui:
-        try:
-            from tutor.tui import run_tui  # noqa: PLC0415
-        except ImportError:
-            sys.stderr.write('[oh-language-tutor] --tui requires textual. Install it with: uv add textual\n')
-            sys.exit(1)
-        runner = run_tui
-    elif args.web:
-        try:
-            from tutor.web import run_web  # noqa: PLC0415
-        except ImportError:
-            sys.stderr.write(
-                '[oh-language-tutor] --web requires fastapi, uvicorn, jinja2. '
-                'Install them with: uv add fastapi uvicorn jinja2\n',
-            )
-            sys.exit(1)
-        runner = run_web
     try:
-        rc = asyncio.run(runner(args))
+        rc = asyncio.run(run_web(args))
     except KeyboardInterrupt:
         rc = 130
     sys.exit(rc)

@@ -1,10 +1,10 @@
 # oh-language-tutor
 
 Pipe any text stream into Claude, get bite-sized bilingual
-explanations out. Designed for language learners who want contextual
-translation of whatever they happen to be reading — game dialog,
-movie subtitles, chat logs, a book being read aloud, anything that
-emits one line at a time to stdout.
+explanations out in a browser UI. Designed for language learners who
+want contextual translation of whatever they happen to be reading —
+game dialog, movie subtitles, chat logs, a book being read aloud,
+anything that emits one line at a time to stdout.
 
 The tool itself is source-agnostic. All audience knowledge (source
 language, target language, level) is built in-process from CLI flags.
@@ -39,10 +39,12 @@ some_command_that_prints_english \
       --level intermediate
 ```
 
-The tool passthrough-prints every input line to stdout, and for each
-non-empty line it asks Claude for an explanation. If Claude decides
-the line isn't real content worth explaining (e.g. log noise), it
-emits the skip token and the tool suppresses the response.
+On start, the tool serves a browser UI at `http://127.0.0.1:8000`
+(override with `--web-host` / `--web-port`). For each non-empty input
+line it asks Claude for an explanation and streams the result into the
+page. If Claude decides the line isn't real content worth explaining
+(e.g. log noise), it emits the skip token and the tool suppresses the
+response.
 
 ### Blade Runner form (with extras file)
 
@@ -53,8 +55,7 @@ scummvm 2>&1 \
       --target-language Korean \
       --level intermediate \
       --extra-system-prompt extras/bladerunner.md \
-      --filter-regex '^\w+: "' \
-      --tui
+      --filter-regex '^\w+: "'
 ```
 
 The extras file supplies the Blade Runner cast table, log format,
@@ -82,12 +83,13 @@ base prompt built by the tool and will be injected automatically.
 | `--extra-system-prompt` | _off_ | Path to a file whose contents are appended to the base prompt. |
 | `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. |
 | `--skip-token` | `SKIP` | Sentinel word the LLM emits for non-content lines. |
-| `--explain-model` | `claude-haiku-4-5` | Claude model id for streaming explanations. Haiku is the cheap default; raise it if you want higher-quality glosses. |
+| `--explain-model` | `claude-sonnet-4-6` | Claude model id for streaming explanations. |
 | `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. Opus is the default since threads are reasoning-heavy. |
-| `--session-file` | `state/session.id` | Where the session id is persisted across runs. |
-| `--log-file` | `state/tutor.log` | Append-only log of raw lines + explanations. |
+| `--state-dir` | `state/` | Directory for the session id, log, and persisted threads. |
+| `--web-host` | `127.0.0.1` | Bind address for the browser UI. |
+| `--web-port` | `8000` | Port for the browser UI. |
 | `--new-session` | _off_ | Ignore the saved session id and start fresh. |
-| `--resume-id ID` | _off_ | Resume a specific session id (overrides `--session-file`). |
+| `--resume-id ID` | _off_ | Resume a specific session id (overrides the saved one). |
 
 ## Persistence
 
@@ -97,15 +99,13 @@ dialog line you've seen. `--new-session` wipes the link; `--resume-id`
 resumes a specific older one.
 
 `state/tutor.log` records the raw stream and every explanation in
-chronological order, for later review.
+chronological order, for later review. Followup threads live in
+`state/threads/`.
 
-Both `state/` files are `.gitignore`-d.
+The whole `state/` tree is `.gitignore`-d.
 
 ## Non-goals
 
-- No in-source overlay. Explanations appear in the terminal only.
-- No token streaming to terminal — responses are buffered to inspect
-  the skip sentinel first. This adds ~1 s per explanation, fine for
-  text rates around one line per few seconds.
+- No in-source overlay. Explanations live in the browser UI.
 - No per-source Python code. Anything domain-specific goes in an
   extras file.

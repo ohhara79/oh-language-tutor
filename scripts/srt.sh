@@ -13,5 +13,4 @@ awk 'BEGIN{RS=""; FS="\n"} {
         --target-language Korean \
         --level intermediate \
         --state-dir state/srt \
-        --web \
 
