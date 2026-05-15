@@ -239,29 +239,38 @@
         form.requestSubmit();
     });
 
-    // After a Send, clear the textarea and keep the button disabled until the
-    // assistant's streamed reply finishes (thread_done / error). On a failed
-    // POST, re-enable immediately.
+    // When a Send starts, disable the textarea so pressing Enter during the
+    // POST + SSE-streamed reply window can't bypass the disabled button via
+    // form.requestSubmit().
+    document.body.addEventListener('htmx:beforeRequest', (evt) => {
+        const form = evt.target && evt.target.closest && evt.target.closest('form.thread-compose');
+        if (!form) return;
+        const ta = form.querySelector('textarea[name="text"]');
+        if (ta) ta.disabled = true;
+    });
+
+    // After a Send, clear the textarea and keep both button + textarea disabled
+    // until the assistant's streamed reply finishes (thread_done / error). On
+    // failed POST, re-enable both.
     document.body.addEventListener('htmx:afterRequest', (evt) => {
         const form = evt.target && evt.target.closest && evt.target.closest('form.thread-compose');
         if (!form) return;
         const btn = form.querySelector('button');
+        const ta = form.querySelector('textarea[name="text"]');
         if (!evt.detail || !evt.detail.successful) {
             if (btn) btn.disabled = false;
+            if (ta) ta.disabled = false;
             return;
         }
-        const ta = form.querySelector('textarea[name="text"]');
-        if (ta) {
-            ta.value = '';
-            ta.focus();
-        }
+        if (ta) ta.value = '';
         if (btn) btn.disabled = true;
     });
 
-    // Re-enable the matching thread-compose Send when its streamed reply
+    // Re-enable the matching thread-compose form when its streamed reply
     // completes or errors. We match by thread_id parsed from the thread_done
     // payload (id="msg-stream-{thread_id}") so cross-thread navigation doesn't
-    // accidentally re-enable an unrelated form.
+    // accidentally re-enable an unrelated form. Focus the textarea after
+    // re-enabling so the user can immediately type the next message.
     document.body.addEventListener('htmx:sseBeforeMessage', (evt) => {
         const type = evt.detail && evt.detail.type;
         if (type !== 'thread_done' && type !== 'error') return;
@@ -272,8 +281,15 @@
                 `form.thread-compose input[name="thread_id"][value="${CSS.escape(match[1])}"]`)
             : document.querySelectorAll('form.thread-compose input[name="thread_id"]');
         inputs.forEach((input) => {
-            const btn = input.closest('form') && input.closest('form').querySelector('button');
+            const form = input.closest('form');
+            if (!form) return;
+            const btn = form.querySelector('button');
+            const ta = form.querySelector('textarea[name="text"]');
             if (btn) btn.disabled = false;
+            if (ta) {
+                ta.disabled = false;
+                ta.focus();
+            }
         });
     });
 })();
