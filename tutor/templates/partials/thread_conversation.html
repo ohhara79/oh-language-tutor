@@ -22,8 +22,12 @@
 <form class="thread-compose"
       hx-post="/commands/send_message"
       hx-target="#thread-messages-{{ meta.thread_id }}"
-      hx-swap="beforeend">
+      hx-swap="beforeend"
+      hx-disabled-elt="find button">
   <input type="hidden" name="thread_id" value="{{ meta.thread_id }}">
   <textarea name="text" rows="1" placeholder="Ask a follow-up..." required></textarea>
-  <button type="submit" class="btn btn-send">Send</button>
+  <button type="submit" class="btn btn-send">
+    <span class="btn-label-idle">Send</span>
+    <span class="btn-label-busy">Sending…</span>
+  </button>
 </form>
