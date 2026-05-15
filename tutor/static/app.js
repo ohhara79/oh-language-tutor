@@ -239,15 +239,41 @@
         form.requestSubmit();
     });
 
-    // Clear the compose textarea after a successful send.
+    // After a Send, clear the textarea and keep the button disabled until the
+    // assistant's streamed reply finishes (thread_done / error). On a failed
+    // POST, re-enable immediately.
     document.body.addEventListener('htmx:afterRequest', (evt) => {
         const form = evt.target && evt.target.closest && evt.target.closest('form.thread-compose');
         if (!form) return;
-        if (!evt.detail || !evt.detail.successful) return;
+        const btn = form.querySelector('button');
+        if (!evt.detail || !evt.detail.successful) {
+            if (btn) btn.disabled = false;
+            return;
+        }
         const ta = form.querySelector('textarea[name="text"]');
         if (ta) {
             ta.value = '';
             ta.focus();
         }
+        if (btn) btn.disabled = true;
+    });
+
+    // Re-enable the matching thread-compose Send when its streamed reply
+    // completes or errors. We match by thread_id parsed from the thread_done
+    // payload (id="msg-stream-{thread_id}") so cross-thread navigation doesn't
+    // accidentally re-enable an unrelated form.
+    document.body.addEventListener('htmx:sseBeforeMessage', (evt) => {
+        const type = evt.detail && evt.detail.type;
+        if (type !== 'thread_done' && type !== 'error') return;
+        const data = (evt.detail && evt.detail.data) || '';
+        const match = data.match(/id="msg-stream-([^"]+)"/);
+        const inputs = match
+            ? document.querySelectorAll(
+                `form.thread-compose input[name="thread_id"][value="${CSS.escape(match[1])}"]`)
+            : document.querySelectorAll('form.thread-compose input[name="thread_id"]');
+        inputs.forEach((input) => {
+            const btn = input.closest('form') && input.closest('form').querySelector('button');
+            if (btn) btn.disabled = false;
+        });
     });
 })();
