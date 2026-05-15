@@ -89,8 +89,8 @@ class WebSink:
         # outerHTML OOB swap targeting that id replaces the unexplained
         # variant in every connected tab.
         oob_fragment = fragment.replace(
-            f'<section class="line active" id="line-{entry.id}"',
-            f'<section class="line active" id="line-{entry.id}" hx-swap-oob="outerHTML"',
+            f'id="line-{entry.id}"',
+            f'id="line-{entry.id}" hx-swap-oob="outerHTML"',
             1,
         )
         self._broadcast('entry_explained', oob_fragment)

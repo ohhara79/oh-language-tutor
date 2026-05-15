@@ -1,4 +1,4 @@
-<section class="line{% if active %} active{% endif %}" id="line-{{ entry.id }}" data-anchor-id="{{ entry.id }}">
+<section class="line{% if active %} active{% endif %}{% if entry.explanation is not none %} has-explanation{% endif %}" id="line-{{ entry.id }}" data-anchor-id="{{ entry.id }}">
   <button type="button" class="raw-toggle">{{ raw_escaped | safe }}</button>
   <div class="line-threads" data-anchor-id="{{ entry.id }}"></div>
   <div class="line-detail">
