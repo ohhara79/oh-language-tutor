@@ -252,7 +252,7 @@ def build_app(ctx: WebContext) -> FastAPI:
             raise HTTPException(status_code=404, detail='entry not found')
         target = entries[idx]
         if target.explanation is not None:
-            return HTMLResponse(content=ctx.sink.render_line(target))
+            return HTMLResponse(content=ctx.sink.render_line(target, active=True))
         context_raws = [e.raw for e in entries[max(0, idx - EXPLAIN_CONTEXT_K) : idx]]
         user_msg = build_explain_user_message(target.raw, context_raws)
         try:
@@ -266,7 +266,7 @@ def build_app(ctx: WebContext) -> FastAPI:
         await ctx.tutor_store.update_explanation_async(entry_id, explanation)
         updated = TutorEntry(raw=target.raw, explanation=explanation, id=target.id)
         ctx.sink.on_entry_explained(updated)
-        return HTMLResponse(content=ctx.sink.render_line(updated))
+        return HTMLResponse(content=ctx.sink.render_line(updated, active=True))
 
     return app
 

@@ -64,7 +64,7 @@ class WebSink:
     def on_raw_line(self, raw: str) -> None:
         self._log.write(raw + '\n')
 
-    def render_line(self, entry: TutorEntry) -> str:
+    def render_line(self, entry: TutorEntry, *, active: bool = False) -> str:
         """Render a TutorEntry to its partial HTML (explained or unexplained)."""
         explanation_html = render_markdown(entry.explanation) if entry.explanation is not None else ''
         return self._env.get_template('partials/line.html').render(
@@ -72,6 +72,7 @@ class WebSink:
             threads=[],
             raw_escaped=html.escape(entry.raw),
             explanation_html=explanation_html,
+            active=active,
         )
 
     def on_entry_appended(self, entry: TutorEntry) -> None:
@@ -83,13 +84,13 @@ class WebSink:
     def on_entry_explained(self, entry: TutorEntry) -> None:
         explanation = entry.explanation or ''
         self._log.write(f'--- explanation for: {entry.raw}\n{explanation}\n---\n')
-        fragment = self.render_line(entry)
+        fragment = self.render_line(entry, active=True)
         # The line.html section already carries id="line-{entry.id}", so an
         # outerHTML OOB swap targeting that id replaces the unexplained
         # variant in every connected tab.
         oob_fragment = fragment.replace(
-            f'<section class="line" id="line-{entry.id}"',
-            f'<section class="line" id="line-{entry.id}" hx-swap-oob="outerHTML"',
+            f'<section class="line active" id="line-{entry.id}"',
+            f'<section class="line active" id="line-{entry.id}" hx-swap-oob="outerHTML"',
             1,
         )
         self._broadcast('entry_explained', oob_fragment)
