@@ -147,6 +147,7 @@ body:not(.view-picker) header {
 .line {
     border-top: 1px solid #ddd;
     padding: 0.25rem 0;
+    scroll-margin-top: 4.5rem;
 }
 .line:first-child { border-top: none; }
 .line.has-explanation {
