@@ -229,6 +229,10 @@
             if (!line) continue;
             const container = line.querySelector('.line-threads');
             if (!container) continue;
+            const heading = document.createElement('h3');
+            heading.className = 'line-threads-heading';
+            heading.textContent = 'Follow-ups';
+            container.appendChild(heading);
             const ul = document.createElement('ul');
             ul.className = 'thread-list';
             list.forEach((li) => { ul.appendChild(li.cloneNode(true)); });

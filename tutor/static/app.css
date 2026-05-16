@@ -120,6 +120,14 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 .line-threads:empty { display: none; }
 .line-threads .thread-list li.thread-item a { padding: 0.5rem 0.6rem; min-height: 36px; }
 .line-threads .thread-list .anchor { font-size: 1.25rem; opacity: 0.75; }
+.line-threads-heading {
+    margin: 0 0 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
 
 .line-actions {
     margin: 0.5rem 0 0;
@@ -311,6 +319,7 @@ body.view-thread #thread-conversation { display: flex; }
     .cfg-field input,
     .cfg-field select { border-color: #555; }
     .thread-list li.thread-item a:hover { border-color: #555; }
+    .line-threads-heading { color: #aaa; }
     .thread-conversation { border-color: #444; }
     .thread-header { border-color: #444; }
     .raw-toggle:hover { background: rgba(255, 255, 255, 0.05); }
