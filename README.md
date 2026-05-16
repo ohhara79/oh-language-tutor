@@ -6,12 +6,12 @@ want contextual translation of whatever they happen to be reading —
 game dialog, movie subtitles, chat logs, a book being read aloud,
 anything that emits one line at a time to stdout.
 
-The tool itself is source-agnostic. All audience knowledge (source
-language, target language, level) is built in-process from CLI flags.
-All source-specific knowledge (cast lists, log format, jargon) lives
-in an optional `--extra-system-prompt` file. Claude sees the combined
-prompt via a persistent session that remembers every prior line in
-the stream, so explanations can reference earlier context naturally.
+The tool itself is source-agnostic. Audience settings (source
+language, target language, level) live in the browser UI and persist
+in `localStorage`, so they survive reloads and can be changed without
+restarting the server. All source-specific knowledge (cast lists, log
+format, jargon) lives in an optional `--extra-system-prompt` file
+that is appended to every per-request system prompt.
 
 ## Setup
 
@@ -28,32 +28,21 @@ shells out to it. `which claude && claude --version` to check.
 
 ### Minimal form (no source-specific context)
 
-Explain any plain English text stream to a Korean intermediate
-learner:
-
 ```sh
-some_command_that_prints_english \
-  | uv run --frozen --no-dev main.py \
-      --source-language English \
-      --target-language Korean \
-      --level intermediate
+some_command_that_prints_text | uv run --frozen --no-dev main.py
 ```
 
 On start, the tool serves a browser UI at `http://127.0.0.1:8000`
-(override with `--web-host` / `--web-port`). For each non-empty input
-line it asks Claude for an explanation and streams the result into the
-page. If Claude decides the line isn't real content worth explaining
-(e.g. log noise), it emits the skip token and the tool suppresses the
-response.
+(override with `--web-host` / `--web-port`). Set source language,
+target language, and level in the header controls; values persist
+across reloads via `localStorage`. Click Explain on any line to
+stream a bilingual explanation from Claude.
 
 ### Blade Runner form (with extras file)
 
 ```sh
 scummvm 2>&1 \
   | uv run --frozen --no-dev main.py \
-      --source-language English \
-      --target-language Korean \
-      --level intermediate \
       --extra-system-prompt extras/bladerunner.md \
       --filter-regex '^\w+: "'
 ```
@@ -77,19 +66,16 @@ base prompt built by the tool and will be injected automatically.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--source-language` | _required_ | Language being learned, e.g. `English`. |
-| `--target-language` | _required_ | Learner's native language, e.g. `Korean`. |
-| `--level` | `intermediate` | `beginner` / `intermediate` / `advanced`. |
-| `--extra-system-prompt` | _off_ | Path to a file whose contents are appended to the base prompt. |
+| `--extra-system-prompt` | _off_ | Path to a file whose contents are appended to every per-request system prompt. |
 | `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. |
-| `--skip-token` | `SKIP` | Sentinel word the LLM emits for non-content lines. |
 | `--explain-model` | `claude-opus-4-7` | Claude model id for streaming explanations. |
 | `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. |
-| `--state-dir` | `state/` | Directory for the session id, log, and persisted threads. |
+| `--state-dir` | `state/` | Directory for persisted state files. |
 | `--web-host` | `127.0.0.1` | Bind address for the browser UI. |
 | `--web-port` | `8000` | Port for the browser UI. |
-| `--new-session` | _off_ | Ignore the saved session id and start fresh. |
-| `--resume-id ID` | _off_ | Resume a specific session id (overrides the saved one). |
+
+Audience settings (source language, target language, level) are
+chosen in the browser header and persisted in `localStorage`.
 
 ## Persistence
 

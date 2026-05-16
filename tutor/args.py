@@ -9,7 +9,6 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_STATE_DIR = PROJECT_DIR / 'state'
 DEFAULT_EXPLAIN_MODEL = 'claude-opus-4-7'
 DEFAULT_ASK_MODEL = 'claude-opus-4-7'
-DEFAULT_LEVEL = 'intermediate'
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -17,22 +16,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog='oh-language-tutor',
         description='Pipe a text stream in; get Claude explanations out.',
-    )
-    p.add_argument(
-        '--source-language',
-        required=True,
-        help='Full name of the language being learned (e.g. English).',
-    )
-    p.add_argument(
-        '--target-language',
-        required=True,
-        help="Full name of the learner's native language (e.g. Korean).",
-    )
-    p.add_argument(
-        '--level',
-        default=DEFAULT_LEVEL,
-        choices=('beginner', 'intermediate', 'advanced'),
-        help='Learner proficiency (default: %(default)s).',
     )
     p.add_argument(
         '--extra-system-prompt',

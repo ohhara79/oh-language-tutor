@@ -10,6 +10,52 @@
     const stack = [{view: 'list'}];
     let ignoreNextPopState = false;
 
+    // Audience settings: hydrate from localStorage, persist on change, and
+    // inject into every outbound /commands/explain and /commands/open_thread
+    // request via htmx:configRequest. send_message reuses an already-opened
+    // session, so its prompt is fixed at open time — no injection needed.
+    const CFG_DEFAULTS = {
+        sourceLanguage: 'English',
+        targetLanguage: 'Korean',
+        level: 'intermediate',
+    };
+    const CFG_FIELDS = [
+        {key: 'sourceLanguage', el: 'cfg-source-language', form: 'source_language'},
+        {key: 'targetLanguage', el: 'cfg-target-language', form: 'target_language'},
+        {key: 'level',          el: 'cfg-level',           form: 'level'},
+    ];
+    function cfgStorageKey(key) { return 'tutor.' + key; }
+    function cfgGet(key) {
+        const raw = localStorage.getItem(cfgStorageKey(key));
+        return raw !== null ? raw : CFG_DEFAULTS[key];
+    }
+    function cfgSet(key, value) {
+        localStorage.setItem(cfgStorageKey(key), value);
+    }
+    function cfgHydrate() {
+        for (const f of CFG_FIELDS) {
+            const el = document.getElementById(f.el);
+            if (!el) continue;
+            el.value = cfgGet(f.key);
+            el.addEventListener('change', () => cfgSet(f.key, el.value));
+            if (el.tagName === 'INPUT') {
+                el.addEventListener('input', () => cfgSet(f.key, el.value));
+            }
+        }
+    }
+    const CFG_INJECT_PATHS = new Set(['/commands/explain', '/commands/open_thread']);
+    document.body.addEventListener('htmx:configRequest', (evt) => {
+        const path = evt.detail && evt.detail.path;
+        if (!CFG_INJECT_PATHS.has(path)) return;
+        const params = evt.detail.parameters || {};
+        for (const f of CFG_FIELDS) {
+            const el = document.getElementById(f.el);
+            params[f.form] = el ? el.value : cfgGet(f.key);
+        }
+        evt.detail.parameters = params;
+    });
+    cfgHydrate();
+
     function current() { return stack[stack.length - 1]; }
 
     function render() {

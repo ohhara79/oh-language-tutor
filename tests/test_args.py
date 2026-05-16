@@ -11,29 +11,8 @@ from tutor.args import (
 )
 
 
-def _required() -> list[str]:
-    return ['--source-language', 'English', '--target-language', 'Korean']
-
-
-def test_required_args_produce_namespace() -> None:
-    args = parse_args(_required())
-    assert args.source_language == 'English'
-    assert args.target_language == 'Korean'
-
-
-def test_missing_source_language_exits() -> None:
-    with pytest.raises(SystemExit):
-        parse_args(['--target-language', 'Korean'])
-
-
-def test_missing_target_language_exits() -> None:
-    with pytest.raises(SystemExit):
-        parse_args(['--source-language', 'English'])
-
-
-def test_defaults() -> None:
-    args = parse_args(_required())
-    assert args.level == 'intermediate'
+def test_no_args_produces_namespace_with_defaults() -> None:
+    args = parse_args([])
     assert args.explain_model == DEFAULT_EXPLAIN_MODEL
     assert args.ask_model == DEFAULT_ASK_MODEL
     assert args.web_host == '127.0.0.1'
@@ -42,23 +21,12 @@ def test_defaults() -> None:
     assert args.filter_regex is None
 
 
-@pytest.mark.parametrize('level', ['beginner', 'intermediate', 'advanced'])
-def test_level_accepts_valid_choices(level: str) -> None:
-    args = parse_args([*_required(), '--level', level])
-    assert args.level == level
-
-
-def test_level_rejects_invalid_choice() -> None:
-    with pytest.raises(SystemExit):
-        parse_args([*_required(), '--level', 'fluent'])
-
-
 def test_web_port_is_coerced_to_int() -> None:
-    args = parse_args([*_required(), '--web-port', '9001'])
+    args = parse_args(['--web-port', '9001'])
     assert args.web_port == 9001
     assert isinstance(args.web_port, int)
 
 
 def test_web_port_rejects_non_integer() -> None:
     with pytest.raises(SystemExit):
-        parse_args([*_required(), '--web-port', 'not-a-number'])
+        parse_args(['--web-port', 'not-a-number'])

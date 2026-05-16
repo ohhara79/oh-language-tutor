@@ -11,7 +11,24 @@
 <body class="view-list" hx-ext="sse" sse-connect="/events">
   <header>
     <h1>oh-language-tutor</h1>
-    <p class="meta">{{ source_language }} &rarr; {{ target_language }} &middot; {{ level }}</p>
+    <div id="cfg-strip" class="cfg-strip">
+      <label class="cfg-field">
+        <span class="cfg-label">Learning</span>
+        <input type="text" id="cfg-source-language" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="cfg-field">
+        <span class="cfg-label">Native</span>
+        <input type="text" id="cfg-target-language" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="cfg-field">
+        <span class="cfg-label">Level</span>
+        <select id="cfg-level">
+          <option value="beginner">beginner</option>
+          <option value="intermediate">intermediate</option>
+          <option value="advanced">advanced</option>
+        </select>
+      </label>
+    </div>
   </header>
 
   <div id="thread-topbar">

@@ -27,7 +27,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from tutor.core import stdin_loop
 from tutor.markdown_util import render_markdown
-from tutor.prompts import EXPLAIN_CONTEXT_K, build_explain_user_message, build_system_prompt
+from tutor.prompts import (
+    EXPLAIN_CONTEXT_K,
+    LEVELS,
+    PromptTooLargeError,
+    build_explain_user_message,
+    build_system_prompt,
+    read_extras_system_prompt,
+)
 from tutor.stream_util import text_delta
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore, new_thread_id
@@ -57,9 +64,20 @@ class WebContext:
     thread_store: ThreadStore
     sink: WebSink
     pool: FollowupThreadPool
-    explain_options: ClaudeAgentOptions
+    extras_text: str | None  # appended to every per-request system prompt
     env: Environment
     version: str  # cache-buster for static assets
+
+
+def _validate_audience(source_language: str, target_language: str, level: str) -> None:
+    """Reject bad audience inputs from the request payload."""
+    if not source_language.strip() or not target_language.strip():
+        raise HTTPException(
+            status_code=400,
+            detail='source_language and target_language must be non-empty',
+        )
+    if level not in LEVELS:
+        raise HTTPException(status_code=400, detail=f'invalid level: {level!r}')
 
 
 def thread_heading(meta: ThreadMeta) -> str:
@@ -96,6 +114,7 @@ async def _stream_explain(
     ctx: WebContext,
     entry: TutorEntry,
     user_msg: str,
+    options: ClaudeAgentOptions,
 ) -> None:
     """Run one short-lived Claude session, streaming chunks to the UI.
 
@@ -107,7 +126,7 @@ async def _stream_explain(
     """
     buf: list[str] = []
     try:
-        async with ClaudeSDKClient(options=ctx.explain_options) as client:
+        async with ClaudeSDKClient(options=options) as client:
             await client.query(user_msg)
             async for msg in client.receive_response():
                 if isinstance(msg, StreamEvent):
@@ -146,9 +165,6 @@ def build_app(ctx: WebContext) -> FastAPI:
             oldest_id=oldest_id,
             page_n=_STREAM_PAGE_N,
             threads=threads,
-            source_language=ctx.args.source_language,
-            target_language=ctx.args.target_language,
-            level=ctx.args.level,
             version=ctx.version,
         )
         return HTMLResponse(content=html_body)
@@ -224,9 +240,19 @@ def build_app(ctx: WebContext) -> FastAPI:
     @app.post('/commands/open_thread', response_class=HTMLResponse)
     async def open_thread(  # pyright: ignore[reportUnusedFunction]
         anchor_id: Annotated[str, Form()],
+        source_language: Annotated[str, Form()],
+        target_language: Annotated[str, Form()],
+        level: Annotated[str, Form()],
     ) -> HTMLResponse:
+        _validate_audience(source_language, target_language, level)
         thread_id = new_thread_id()
-        await ctx.pool.open_thread(thread_id, anchor_id)
+        await ctx.pool.open_thread(
+            thread_id,
+            anchor_id,
+            source_language=source_language,
+            target_language=target_language,
+            level=level,
+        )
         meta = ctx.pool.peek_meta(thread_id)
         if meta is None:
             raise HTTPException(status_code=500, detail='thread open failed')
@@ -274,7 +300,11 @@ def build_app(ctx: WebContext) -> FastAPI:
     @app.post('/commands/explain', response_class=HTMLResponse)
     async def explain(  # pyright: ignore[reportUnusedFunction]
         entry_id: Annotated[str, Form()],
+        source_language: Annotated[str, Form()],
+        target_language: Annotated[str, Form()],
+        level: Annotated[str, Form()],
     ) -> HTMLResponse:
+        _validate_audience(source_language, target_language, level)
         entries = ctx.tutor_store.load()
         idx = next((i for i, e in enumerate(entries) if e.id == entry_id), -1)
         if idx < 0:
@@ -282,9 +312,24 @@ def build_app(ctx: WebContext) -> FastAPI:
         target = entries[idx]
         if target.explanation is not None:
             return HTMLResponse(content=ctx.sink.render_line(target, active=True))
+        try:
+            system_prompt = build_system_prompt(
+                source_language,
+                target_language,
+                level,
+                ctx.extras_text,
+            )
+        except PromptTooLargeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        options = ClaudeAgentOptions(
+            system_prompt=system_prompt,
+            model=ctx.args.explain_model,
+            allowed_tools=[],
+            include_partial_messages=True,
+        )
         context_raws = [e.raw for e in entries[max(0, idx - EXPLAIN_CONTEXT_K) : idx]]
         user_msg = build_explain_user_message(target.raw, context_raws)
-        task = asyncio.create_task(_stream_explain(ctx, target, user_msg))
+        task = asyncio.create_task(_stream_explain(ctx, target, user_msg, options))
         ctx.sink.track_explain(task)
         return HTMLResponse(content=ctx.sink.render_line(target, streaming=True))
 
@@ -322,18 +367,11 @@ async def run_web(args: argparse.Namespace) -> int:
         msg = f'oh-language-tutor: invalid --filter-regex: {exc}'
         raise SystemExit(msg) from exc
 
-    system_prompt = build_system_prompt(args)
+    extras_text = read_extras_system_prompt(args.extra_system_prompt) if args.extra_system_prompt else None
 
     state_dir = Path(args.state_dir).expanduser()
     state_dir.mkdir(parents=True, exist_ok=True)
     log_path = state_dir / 'tutor.log'
-
-    explain_options = ClaudeAgentOptions(
-        system_prompt=system_prompt,
-        model=args.explain_model,
-        allowed_tools=[],
-        include_partial_messages=True,
-    )
 
     stop_event = asyncio.Event()
 
@@ -355,9 +393,6 @@ async def run_web(args: argparse.Namespace) -> int:
             store=thread_store,
             tutor_store=tutor_store,
             log=log,
-            source_language=args.source_language,
-            target_language=args.target_language,
-            level=args.level,
         )
 
         ctx = WebContext(
@@ -369,7 +404,7 @@ async def run_web(args: argparse.Namespace) -> int:
             thread_store=thread_store,
             sink=sink,
             pool=pool,
-            explain_options=explain_options,
+            extras_text=extras_text,
             env=env,
             version=str(int(time.time())),
         )

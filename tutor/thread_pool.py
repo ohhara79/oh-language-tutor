@@ -60,23 +60,25 @@ class FollowupThreadPool:
         store: ThreadStore,
         tutor_store: TutorStore,
         log: TextIO,
-        source_language: str,
-        target_language: str,
-        level: str,
     ) -> None:
         self._model: str = model
         self._sink: OutputSink = sink
         self._store: ThreadStore = store
         self._tutor_store: TutorStore = tutor_store
         self._log: TextIO = log
-        self._source_language: str = source_language
-        self._target_language: str = target_language
-        self._level: str = level
         self._active: dict[str, _ActiveThread] = {}
 
     # -- public API -----------------------------------------------------------
 
-    async def open_thread(self, thread_id: str, anchor_id: str) -> None:
+    async def open_thread(
+        self,
+        thread_id: str,
+        anchor_id: str,
+        *,
+        source_language: str,
+        target_language: str,
+        level: str,
+    ) -> None:
         """Create a new followup thread anchored to tutor entry *anchor_id*.
 
         The anchor's ``raw`` and ``explanation`` are resolved by reading
@@ -99,9 +101,9 @@ class FollowupThreadPool:
         context_entries = entries[max(0, anchor_idx - 100) : anchor_idx]
         context_lines = [LineRecord(idx=-1, raw=e.raw, explanation=e.explanation) for e in context_entries]
         system_prompt = build_thread_system_prompt(
-            self._source_language,
-            self._target_language,
-            self._level,
+            source_language,
+            target_language,
+            level,
             anchor,
             context_lines,
         )

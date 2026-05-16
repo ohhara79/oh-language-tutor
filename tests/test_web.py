@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
-from claude_agent_sdk import ClaudeAgentOptions
 
 from tests.conftest import FakeClaudeSDKClient, make_assistant, make_result, make_text_delta
 from tutor import web as web_mod
@@ -102,7 +101,7 @@ class _FakePool:
     """Minimal stand-in for FollowupThreadPool that records calls."""
 
     threads: dict[str, ThreadMeta]
-    opened: list[tuple[str, str]]
+    opened: list[tuple[str, str, str, str, str]]
     sent: list[tuple[str, str]]
     hidden: list[str]
     deleted: list[str]
@@ -117,8 +116,16 @@ class _FakePool:
     def list_threads(self) -> list[ThreadMeta]:
         return list(self.threads.values())
 
-    async def open_thread(self, thread_id: str, anchor_id: str) -> None:
-        self.opened.append((thread_id, anchor_id))
+    async def open_thread(
+        self,
+        thread_id: str,
+        anchor_id: str,
+        *,
+        source_language: str,
+        target_language: str,
+        level: str,
+    ) -> None:
+        self.opened.append((thread_id, anchor_id, source_language, target_language, level))
         self.threads[thread_id] = _meta(thread_id=thread_id, anchor_raw='x', anchor_id=anchor_id)
         self._active[thread_id] = object()
 
@@ -143,12 +150,11 @@ class _FakePool:
         self.deleted_tutor.append(anchor_id)
 
 
-def _build_ctx(tmp_path: Path) -> tuple[WebContext, _FakePool]:
+def _build_ctx(tmp_path: Path, *, extras_text: str | None = None) -> tuple[WebContext, _FakePool]:
     args = argparse.Namespace(
-        source_language='Korean',
-        target_language='English',
-        level='intermediate',
         state_dir=str(tmp_path),
+        explain_model='test-model',
+        ask_model='test-model',
     )
     log = io.StringIO()
     tutor_store = TutorStore(tmp_path / 'tutor.json')
@@ -170,11 +176,6 @@ def _build_ctx(tmp_path: Path) -> tuple[WebContext, _FakePool]:
     )
 
     stop = asyncio.Event()
-    explain_options = ClaudeAgentOptions(
-        system_prompt='sys',
-        model='test-model',
-        allowed_tools=[],
-    )
     ctx = WebContext(
         args=args,
         log=log,
@@ -184,11 +185,18 @@ def _build_ctx(tmp_path: Path) -> tuple[WebContext, _FakePool]:
         thread_store=thread_store,
         sink=sink,
         pool=pool,  # pyright: ignore[reportArgumentType]
-        explain_options=explain_options,
+        extras_text=extras_text,
         env=env,
         version='test-v',
     )
     return ctx, pool
+
+
+_AUDIENCE_FORM = {
+    'source_language': 'English',
+    'target_language': 'Korean',
+    'level': 'intermediate',
+}
 
 
 def _client(ctx: WebContext) -> httpx.AsyncClient:
@@ -197,15 +205,15 @@ def _client(ctx: WebContext) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url='http://test')
 
 
-async def test_get_index_returns_html_with_metadata(tmp_path: Path):
+async def test_get_index_returns_html_with_settings_strip(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
         r = await client.get('/')
     assert r.status_code == 200
     body = r.text
-    assert 'Korean' in body
-    assert 'English' in body
-    assert 'intermediate' in body
+    assert 'id="cfg-source-language"' in body
+    assert 'id="cfg-target-language"' in body
+    assert 'id="cfg-level"' in body
     assert 'hi' in body  # pre-existing tutor entry
 
 
@@ -229,10 +237,26 @@ async def test_get_thread_reopens_and_renders(tmp_path: Path):
 async def test_post_open_thread_creates_and_broadcasts(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
+        r = await client.post(
+            '/commands/open_thread',
+            data={'anchor_id': 'a-1', **_AUDIENCE_FORM},
+        )
     assert r.status_code == 200
     assert len(pool.opened) == 1
-    assert pool.opened[0][1] == 'a-1'
+    _tid, anchor_id, src, tgt, level = pool.opened[0]
+    assert anchor_id == 'a-1'
+    assert (src, tgt, level) == ('English', 'Korean', 'intermediate')
+
+
+async def test_post_open_thread_rejects_invalid_level(tmp_path: Path):
+    ctx, pool = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.post(
+            '/commands/open_thread',
+            data={'anchor_id': 'a-1', **_AUDIENCE_FORM, 'level': 'fluent'},
+        )
+    assert r.status_code == 400
+    assert pool.opened == []
 
 
 async def test_post_send_message_fragment_and_pool_called(tmp_path: Path):
@@ -275,8 +299,31 @@ async def test_post_delete_tutor_entry_returns_204(tmp_path: Path):
 async def test_post_explain_unknown_entry_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/explain', data={'entry_id': 'missing'})
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'missing', **_AUDIENCE_FORM},
+        )
     assert r.status_code == 404
+
+
+async def test_post_explain_rejects_invalid_level(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'a-1', **_AUDIENCE_FORM, 'level': 'fluent'},
+        )
+    assert r.status_code == 400
+
+
+async def test_post_explain_rejects_empty_audience(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'a-1', **_AUDIENCE_FORM, 'source_language': '   '},
+        )
+    assert r.status_code == 400
 
 
 async def test_post_explain_already_explained_is_idempotent(
@@ -297,7 +344,10 @@ async def test_post_explain_already_explained_is_idempotent(
 
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', factory)
     async with _client(ctx) as client:
-        r = await client.post('/commands/explain', data={'entry_id': 'a-1'})
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'a-1', **_AUDIENCE_FORM},
+        )
     assert r.status_code == 200
     assert called is False
     assert 'meaning' in r.text  # explained partial
@@ -325,7 +375,10 @@ async def test_post_explain_happy_path(
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
     async with _client(ctx) as client:
-        r = await client.post('/commands/explain', data={'entry_id': 'u-1'})
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-1', **_AUDIENCE_FORM},
+        )
         # Immediate response is the streaming line placeholder, not the
         # explanation itself — that arrives via SSE chunks + entry_explained.
         assert r.status_code == 200
@@ -343,6 +396,11 @@ async def test_post_explain_happy_path(
     [sent_msg] = fake_client_factory.constructed[0].queries
     assert 'target raw' in sent_msg
     assert 'hi' in sent_msg  # the fixture's pre-existing a-1 entry as context
+    # System prompt is built from the request's audience values.
+    [opts] = fake_client_factory.option_calls
+    assert 'English' in opts.system_prompt
+    assert 'Korean' in opts.system_prompt
+    assert 'intermediate' in opts.system_prompt
 
 
 async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
@@ -359,7 +417,10 @@ async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
 
     log = cast('io.StringIO', ctx.log)
     async with _client(ctx) as client:
-        r = await client.post('/commands/explain', data={'entry_id': 'u-2'})
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-2', **_AUDIENCE_FORM},
+        )
         assert r.status_code == 200
         await ctx.sink.flush_pending_writes()
 
@@ -380,7 +441,10 @@ async def test_post_explain_client_failure_logs_error(
 
     log = cast('io.StringIO', ctx.log)
     async with _client(ctx) as client:
-        r = await client.post('/commands/explain', data={'entry_id': 'u-3'})
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-3', **_AUDIENCE_FORM},
+        )
         assert r.status_code == 200
         await ctx.sink.flush_pending_writes()
 
@@ -406,7 +470,10 @@ async def test_post_explain_uses_context_window(
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
     async with _client(ctx) as client:
-        r = await client.post('/commands/explain', data={'entry_id': 'u-4'})
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-4', **_AUDIENCE_FORM},
+        )
         assert r.status_code == 200
         await ctx.sink.flush_pending_writes()
 

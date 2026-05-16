@@ -63,11 +63,11 @@ def _pool(tmp_path: Path, sink: RecordingSink) -> tuple[FollowupThreadPool, Thre
         store=tstore,
         tutor_store=tutor_store,
         log=log,
-        source_language='ko',
-        target_language='en',
-        level='intermediate',
     )
     return pool, tstore, tutor_store, log
+
+
+_OPEN_AUDIENCE = {'source_language': 'ko', 'target_language': 'en', 'level': 'intermediate'}
 
 
 # -- open_thread -------------------------------------------------------------
@@ -76,7 +76,7 @@ def _pool(tmp_path: Path, sink: RecordingSink) -> tuple[FollowupThreadPool, Thre
 async def test_open_thread_unknown_anchor_emits_error(tmp_path: Path):
     sink = RecordingSink()
     pool, _, _, _ = _pool(tmp_path, sink)
-    await pool.open_thread('t-1', 'missing-anchor')
+    await pool.open_thread('t-1', 'missing-anchor', **_OPEN_AUDIENCE)
     assert any('missing-anchor' in e for e in sink.errors)
     assert pool.peek_meta('t-1') is None
 
@@ -87,7 +87,7 @@ async def test_open_thread_success_seeds_active_without_connecting(tmp_path: Pat
     entry = TutorEntry(raw='hello', explanation='meaning', id='a-1')
     tutor_store.append(entry)
 
-    await pool.open_thread('t-1', 'a-1')
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)
     meta = pool.peek_meta('t-1')
     assert meta is not None
     assert meta.anchor_raw == 'hello'
@@ -152,7 +152,7 @@ async def test_send_message_happy_path(
     sink = RecordingSink()
     pool, _, tutor_store, _ = _pool(tmp_path, sink)
     tutor_store.append(TutorEntry(raw='r', explanation='e', id='a-1'))
-    await pool.open_thread('t-1', 'a-1')
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)
 
     client = FakeClaudeSDKClient(
         [
@@ -188,7 +188,7 @@ async def test_send_message_fresh_connect_failure_emits_done_empty(
     sink = RecordingSink()
     pool, _, tutor_store, _ = _pool(tmp_path, sink)
     tutor_store.append(TutorEntry(raw='r', explanation='e', id='a-1'))
-    await pool.open_thread('t-1', 'a-1')
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)
 
     client = FakeClaudeSDKClient(raise_on_enter=RuntimeError('no network'))
     fake_client_factory.push(client)
@@ -266,7 +266,7 @@ async def test_delete_thread_removes_file_and_refreshes_list(
     sink = RecordingSink()
     pool, tstore, tutor_store, _ = _pool(tmp_path, sink)
     tutor_store.append(TutorEntry(raw='r', explanation='e', id='a-1'))
-    await pool.open_thread('t-1', 'a-1')
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)
     # Persist so there's something to delete
     tstore.save_thread(pool.peek_meta('t-1'))  # pyright: ignore[reportArgumentType]
     assert tstore.load_thread('t-1') is not None
@@ -288,7 +288,7 @@ async def test_delete_tutor_entry_cascades(
     entry = TutorEntry(raw='r', explanation='e', id='a-1')
     tutor_store.append(entry)
 
-    await pool.open_thread('t-1', 'a-1')
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)
     tstore.save_thread(pool.peek_meta('t-1'))  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(tp_mod, 'ClaudeSDKClient', fake_client_factory)
@@ -317,8 +317,8 @@ async def test_close_all_disconnects_active_threads(
     sink = RecordingSink()
     pool, _, tutor_store, _ = _pool(tmp_path, sink)
     tutor_store.append(TutorEntry(raw='r', explanation='e', id='a-1'))
-    await pool.open_thread('t-1', 'a-1')
-    await pool.open_thread('t-2', 'a-1')
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)
+    await pool.open_thread('t-2', 'a-1', **_OPEN_AUDIENCE)
 
     monkeypatch.setattr(tp_mod, 'ClaudeSDKClient', fake_client_factory)
     await pool.close_all()
@@ -355,5 +355,5 @@ async def test_peek_meta_prefers_active_over_disk(tmp_path: Path):
         anchor_id='a-1',
     )
     tstore.save_thread(disk_meta)
-    await pool.open_thread('t-1', 'a-1')  # overwrites in-memory with 'r' anchor_raw
+    await pool.open_thread('t-1', 'a-1', **_OPEN_AUDIENCE)  # overwrites in-memory with 'r' anchor_raw
     assert pool.peek_meta('t-1').anchor_raw == 'r'  # pyright: ignore[reportOptionalMemberAccess]

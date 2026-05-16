@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from typing import TYPE_CHECKING
 
 import pytest
@@ -10,28 +9,18 @@ import pytest
 from tutor.prompts import (
     EXPLAIN_CONTEXT_K,
     MAX_SYSTEM_PROMPT_BYTES,
+    PromptTooLargeError,
     _truncate_to_utf8_bytes,
     build_base_system_prompt,
     build_explain_user_message,
     build_system_prompt,
     build_thread_system_prompt,
+    read_extras_system_prompt,
 )
 from tutor.types import LineRecord
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def _base_ns(
-    *,
-    extra_system_prompt: str | None = None,
-) -> argparse.Namespace:
-    return argparse.Namespace(
-        source_language='English',
-        target_language='Korean',
-        level='intermediate',
-        extra_system_prompt=extra_system_prompt,
-    )
 
 
 def test_build_base_system_prompt_contains_core_fields() -> None:
@@ -42,35 +31,40 @@ def test_build_base_system_prompt_contains_core_fields() -> None:
 
 
 def test_build_system_prompt_without_extra_equals_base() -> None:
-    args = _base_ns()
-    assert build_system_prompt(args) == build_base_system_prompt('English', 'Korean', 'intermediate')
+    assert build_system_prompt('English', 'Korean', 'intermediate') == build_base_system_prompt(
+        'English',
+        'Korean',
+        'intermediate',
+    )
 
 
-def test_build_system_prompt_appends_extra_file(tmp_path: Path) -> None:
-    extra = tmp_path / 'extra.md'
+def test_build_system_prompt_appends_extra_text() -> None:
     extra_text = 'Domain-specific stuff about a video game.'
-    extra.write_text(extra_text, encoding='utf-8')
-
-    prompt = build_system_prompt(_base_ns(extra_system_prompt=str(extra)))
+    prompt = build_system_prompt('English', 'Korean', 'intermediate', extras_text=extra_text)
 
     marker = 'ADDITIONAL SOURCE-SPECIFIC CONTEXT:'
     assert marker in prompt
     assert prompt.index(marker) < prompt.index(extra_text)
 
 
-def test_build_system_prompt_missing_extra_raises(tmp_path: Path) -> None:
+def test_build_system_prompt_oversized_extras_raises() -> None:
+    huge = 'A' * (MAX_SYSTEM_PROMPT_BYTES + 1)
+    with pytest.raises(PromptTooLargeError) as excinfo:
+        build_system_prompt('English', 'Korean', 'intermediate', extras_text=huge)
+    assert 'execve per-arg cap' in str(excinfo.value)
+
+
+def test_read_extras_system_prompt_returns_file_contents(tmp_path: Path) -> None:
+    extra = tmp_path / 'extra.md'
+    extra.write_text('hello extras', encoding='utf-8')
+    assert read_extras_system_prompt(str(extra)) == 'hello extras'
+
+
+def test_read_extras_system_prompt_missing_raises(tmp_path: Path) -> None:
     missing = tmp_path / 'nope.md'
     with pytest.raises(SystemExit) as excinfo:
-        build_system_prompt(_base_ns(extra_system_prompt=str(missing)))
+        read_extras_system_prompt(str(missing))
     assert str(excinfo.value).startswith('oh-language-tutor: cannot read')
-
-
-def test_build_system_prompt_oversized_extra_raises(tmp_path: Path) -> None:
-    extra = tmp_path / 'huge.md'
-    extra.write_text('A' * (MAX_SYSTEM_PROMPT_BYTES + 1), encoding='utf-8')
-    with pytest.raises(SystemExit) as excinfo:
-        build_system_prompt(_base_ns(extra_system_prompt=str(extra)))
-    assert 'execve per-arg cap' in str(excinfo.value)
 
 
 def test_explain_context_k_is_positive() -> None:

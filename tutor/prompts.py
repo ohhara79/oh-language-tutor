@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from tutor.types import LineRecord
-
-if TYPE_CHECKING:
-    import argparse
-
 
 # Linux execve() per-arg cap is PAGE_SIZE * 32 = 128 KiB on x86_64, and the
 # SDK passes system_prompt as a single argv entry. Stay well under with a
@@ -19,13 +14,19 @@ MAX_SYSTEM_PROMPT_BYTES = 96 * 1024
 # How many preceding raw lines accompany each Explain click as context.
 EXPLAIN_CONTEXT_K = 100
 
+LEVELS: frozenset[str] = frozenset({'beginner', 'intermediate', 'advanced'})
+
+
+class PromptTooLargeError(ValueError):
+    """Raised when the constructed system prompt exceeds the execve per-arg cap."""
+
 
 def build_base_system_prompt(
     source_language: str,
     target_language: str,
     level: str,
 ) -> str:
-    """Build the audience/format half of the system prompt from CLI flags."""
+    """Build the audience/format half of the system prompt."""
     return (
         f'You are a private language tutor helping a native {target_language} '
         f'speaker learn {source_language}. '
@@ -39,7 +40,7 @@ def build_base_system_prompt(
         'Explanation structure (skip any empty section, stay under 100 words):\n'
         '\n'
         f'  \U0001f3af Translation: <natural {target_language} translation>\n'
-        f'  \U0001f4da Vocabulary: <2-3 items, {source_language} \u2192 {target_language}>\n'
+        f'  \U0001f4da Vocabulary: <2-3 items, {source_language} → {target_language}>\n'
         '  \U0001f4a1 Expression: <one idiom/slang/grammar pattern, explained in '
         f'{target_language}>\n'
         '  \U0001f3ac Context:    <one sentence on what the speaker means in THIS '
@@ -55,31 +56,40 @@ def build_base_system_prompt(
     )
 
 
-def build_system_prompt(args: argparse.Namespace) -> str:
-    """Base + optional user-supplied extras."""
-    base = build_base_system_prompt(
-        args.source_language,
-        args.target_language,
-        args.level,
-    )
-    if args.extra_system_prompt:
-        path = Path(args.extra_system_prompt).expanduser()
-        try:
-            extra = path.read_text(encoding='utf-8')
-        except OSError as exc:
-            msg = f'oh-language-tutor: cannot read --extra-system-prompt {path}: {exc}'
-            raise SystemExit(msg) from exc
-        result = base + '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extra
-    else:
-        result = base
+def read_extras_system_prompt(path: str) -> str:
+    """Read the optional `--extra-system-prompt` file at startup.
+
+    Raises ``SystemExit`` on read errors — the path comes from a CLI flag,
+    so a bad path is a launch-time configuration error.
+    """
+    p = Path(path).expanduser()
+    try:
+        return p.read_text(encoding='utf-8')
+    except OSError as exc:
+        msg = f'oh-language-tutor: cannot read --extra-system-prompt {p}: {exc}'
+        raise SystemExit(msg) from exc
+
+
+def build_system_prompt(
+    source_language: str,
+    target_language: str,
+    level: str,
+    extras_text: str | None = None,
+) -> str:
+    """Build the explain system prompt for one request.
+
+    Raises :class:`PromptTooLargeError` if the result exceeds the SDK's
+    execve per-arg cap.
+    """
+    base = build_base_system_prompt(source_language, target_language, level)
+    result = base + '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extras_text if extras_text else base
     size = len(result.encode('utf-8'))
     if size > MAX_SYSTEM_PROMPT_BYTES:
         msg = (
-            f'oh-language-tutor: system prompt is {size:,} bytes but the Linux '
-            f'execve per-arg cap limits it to {MAX_SYSTEM_PROMPT_BYTES:,} bytes. '
-            f'Shorten --extra-system-prompt ({args.extra_system_prompt}).'
+            f'system prompt is {size:,} bytes but the Linux execve '
+            f'per-arg cap limits it to {MAX_SYSTEM_PROMPT_BYTES:,} bytes.'
         )
-        raise SystemExit(msg)
+        raise PromptTooLargeError(msg)
     return result
 
 
@@ -105,7 +115,7 @@ def _render_thread_system_prompt(
         '\n'
         'The learner is asking follow-up questions about a specific line from '
         'a dialog stream they are watching. Answer their questions directly '
-        'and concisely. This is a focused thread \u2014 they may ask follow-up '
+        'and concisely. This is a focused thread — they may ask follow-up '
         'questions, and you can build on what you have said earlier in this '
         'thread.\n'
         '\n'
@@ -138,7 +148,7 @@ def _truncate_to_utf8_bytes(text: str, limit: int) -> str:
     encoded = text.encode('utf-8')
     if len(encoded) <= limit:
         return text
-    return encoded[:limit].decode('utf-8', errors='ignore') + '\u2026'
+    return encoded[:limit].decode('utf-8', errors='ignore') + '…'
 
 
 def build_thread_system_prompt(

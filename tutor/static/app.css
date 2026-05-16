@@ -14,7 +14,34 @@ header {
     padding: 0.75rem 1rem;
 }
 header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
-.meta { color: #888; font-size: 0.85rem; margin: 0; }
+
+.cfg-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+}
+.cfg-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.85rem;
+}
+.cfg-label { color: #888; }
+.cfg-field input,
+.cfg-field select {
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 0.25rem 0.4rem;
+    min-height: 32px;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    min-width: 6rem;
+}
+.cfg-field input:focus-visible,
+.cfg-field select:focus-visible { outline: 2px solid #8ab; outline-offset: 1px; }
 
 #thread-topbar {
     display: none;
@@ -281,6 +308,8 @@ body.view-thread #thread-conversation { display: flex; }
     .btn-del { color: #ff8a8a; border-color: #855; }
     .btn-ask { color: #9bf; border-color: #488; }
     .btn:disabled { color: #888; border-color: #555; }
+    .cfg-field input,
+    .cfg-field select { border-color: #555; }
     .thread-list li.thread-item a:hover { border-color: #555; }
     .thread-conversation { border-color: #444; }
     .thread-header { border-color: #444; }
