@@ -115,14 +115,19 @@ async def _stream_explain(
     entry: TutorEntry,
     user_msg: str,
     options: ClaudeAgentOptions,
+    *,
+    source_language: str,
+    target_language: str,
+    level: str,
 ) -> None:
     """Run one short-lived Claude session, streaming chunks to the UI.
 
     Lives past the originating HTTP request so a client disconnect doesn't
     lose the in-progress explanation. On success, persists the explanation
-    and broadcasts the finalized line. On failure, rolls the line back to
-    its unexplained state via :meth:`WebSink.on_explain_aborted` so the
-    user can retry.
+    together with the audience under which it was produced (so subsequent
+    Ask threads can reuse it) and broadcasts the finalized line. On
+    failure, rolls the line back to its unexplained state via
+    :meth:`WebSink.on_explain_aborted` so the user can retry.
     """
     buf: list[str] = []
     try:
@@ -144,8 +149,21 @@ async def _stream_explain(
         ctx.sink.on_error('explain produced empty response')
         ctx.sink.on_explain_aborted(entry)
         return
-    await ctx.tutor_store.update_explanation_async(entry.id, explanation)
-    updated = TutorEntry(raw=entry.raw, explanation=explanation, id=entry.id)
+    await ctx.tutor_store.update_explanation_async(
+        entry.id,
+        explanation,
+        source_language=source_language,
+        target_language=target_language,
+        level=level,
+    )
+    updated = TutorEntry(
+        raw=entry.raw,
+        explanation=explanation,
+        id=entry.id,
+        source_language=source_language,
+        target_language=target_language,
+        level=level,
+    )
     ctx.sink.on_entry_explained(updated)
 
 
@@ -240,10 +258,16 @@ def build_app(ctx: WebContext) -> FastAPI:
     @app.post('/commands/open_thread', response_class=HTMLResponse)
     async def open_thread(  # pyright: ignore[reportUnusedFunction]
         anchor_id: Annotated[str, Form()],
-        source_language: Annotated[str, Form()],
-        target_language: Annotated[str, Form()],
-        level: Annotated[str, Form()],
     ) -> HTMLResponse:
+        entry = next((e for e in ctx.tutor_store.load() if e.id == anchor_id), None)
+        if entry is None:
+            raise HTTPException(status_code=404, detail='entry not found')
+        # Audience is frozen on the entry at Explain time. Legacy entries
+        # written before this field existed fall back to the hardcoded
+        # English/Korean/intermediate default so old streams stay openable.
+        source_language = entry.source_language or 'English'
+        target_language = entry.target_language or 'Korean'
+        level = entry.level or 'intermediate'
         _validate_audience(source_language, target_language, level)
         thread_id = new_thread_id()
         await ctx.pool.open_thread(
@@ -329,7 +353,17 @@ def build_app(ctx: WebContext) -> FastAPI:
         )
         context_raws = [e.raw for e in entries[max(0, idx - EXPLAIN_CONTEXT_K) : idx]]
         user_msg = build_explain_user_message(target.raw, context_raws)
-        task = asyncio.create_task(_stream_explain(ctx, target, user_msg, options))
+        task = asyncio.create_task(
+            _stream_explain(
+                ctx,
+                target,
+                user_msg,
+                options,
+                source_language=source_language,
+                target_language=target_language,
+                level=level,
+            ),
+        )
         ctx.sink.track_explain(task)
         return HTMLResponse(content=ctx.sink.render_line(target, streaming=True))
 

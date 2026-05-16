@@ -205,16 +205,27 @@ def _client(ctx: WebContext) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url='http://test')
 
 
-async def test_get_index_returns_html_with_settings_strip(tmp_path: Path):
+async def test_get_index_renders_entries_without_header_controls(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
         r = await client.get('/')
     assert r.status_code == 200
     body = r.text
-    assert 'id="cfg-source-language"' in body
-    assert 'id="cfg-target-language"' in body
-    assert 'id="cfg-level"' in body
+    # Header no longer carries audience controls.
+    assert 'id="cfg-source-language"' not in body
+    assert 'id="cfg-level"' not in body
     assert 'hi' in body  # pre-existing tutor entry
+
+
+async def test_get_index_renders_per_line_controls_on_unexplained_entries(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.tutor_store.append(TutorEntry(raw='unexplained line', id='u-9'))
+    async with _client(ctx) as client:
+        r = await client.get('/')
+    body = r.text
+    assert 'class="cfg-source-language"' in body
+    assert 'class="cfg-target-language"' in body
+    assert 'class="cfg-level"' in body
 
 
 async def test_get_thread_404_when_missing(tmp_path: Path):
@@ -234,29 +245,45 @@ async def test_get_thread_reopens_and_renders(tmp_path: Path):
     assert pool.reopened == ['t-1']
 
 
-async def test_post_open_thread_creates_and_broadcasts(tmp_path: Path):
+async def test_post_open_thread_uses_audience_frozen_on_entry(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
+    # Replace the fixture's a-1 entry with one that has frozen audience.
+    ctx.tutor_store.delete('a-1')
+    ctx.tutor_store.append(
+        TutorEntry(
+            raw='hi',
+            explanation='meaning',
+            id='a-1',
+            source_language='Spanish',
+            target_language='Korean',
+            level='advanced',
+        ),
+    )
     async with _client(ctx) as client:
-        r = await client.post(
-            '/commands/open_thread',
-            data={'anchor_id': 'a-1', **_AUDIENCE_FORM},
-        )
+        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
     assert r.status_code == 200
     assert len(pool.opened) == 1
     _tid, anchor_id, src, tgt, level = pool.opened[0]
     assert anchor_id == 'a-1'
+    assert (src, tgt, level) == ('Spanish', 'Korean', 'advanced')
+
+
+async def test_post_open_thread_legacy_entry_falls_back_to_defaults(tmp_path: Path):
+    ctx, pool = _build_ctx(tmp_path)
+    # Fixture entry a-1 has no audience fields — simulates a legacy entry
+    # written before audience was frozen on the entry.
+    async with _client(ctx) as client:
+        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
+    assert r.status_code == 200
+    _tid, _aid, src, tgt, level = pool.opened[0]
     assert (src, tgt, level) == ('English', 'Korean', 'intermediate')
 
 
-async def test_post_open_thread_rejects_invalid_level(tmp_path: Path):
-    ctx, pool = _build_ctx(tmp_path)
+async def test_post_open_thread_unknown_entry_returns_404(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post(
-            '/commands/open_thread',
-            data={'anchor_id': 'a-1', **_AUDIENCE_FORM, 'level': 'fluent'},
-        )
-    assert r.status_code == 400
-    assert pool.opened == []
+        r = await client.post('/commands/open_thread', data={'anchor_id': 'missing'})
+    assert r.status_code == 404
 
 
 async def test_post_send_message_fragment_and_pool_called(tmp_path: Path):
@@ -387,9 +414,12 @@ async def test_post_explain_happy_path(
         # Drive the background streaming task to completion.
         await ctx.sink.flush_pending_writes()
 
-    # Persisted explanation
+    # Persisted explanation, with audience frozen alongside.
     [stored_explained] = [e for e in ctx.tutor_store.load() if e.id == 'u-1']
     assert stored_explained.explanation == 'the explanation'
+    assert stored_explained.source_language == 'English'
+    assert stored_explained.target_language == 'Korean'
+    assert stored_explained.level == 'intermediate'
 
     # Fresh subprocess actually spawned with target line and prior context.
     assert len(fake_client_factory.constructed) == 1

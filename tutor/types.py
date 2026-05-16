@@ -28,11 +28,19 @@ class TutorEntry:
     """One stdin line persisted for left-pane restoration.
 
     ``explanation`` is None until the user clicks Explain in the UI.
+    ``source_language`` / ``target_language`` / ``level`` are populated
+    at the same time as ``explanation`` so follow-up Ask threads can be
+    opened with the audience under which the line was originally
+    explained. Legacy entries written before this field existed read
+    back as None on all three.
     """
 
     raw: str
     explanation: str | None = None
     id: str = field(default_factory=lambda: uuid4().hex)
+    source_language: str | None = None
+    target_language: str | None = None
+    level: str | None = None
 
 
 # ---------------------------------------------------------------------------

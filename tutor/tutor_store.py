@@ -46,7 +46,17 @@ class TutorStore:
 
         try:
             data = json.loads(self._path.read_text(encoding='utf-8'))
-            entries = [TutorEntry(raw=e['raw'], explanation=e.get('explanation'), id=e['id']) for e in data]
+            entries = [
+                TutorEntry(
+                    raw=e['raw'],
+                    explanation=e.get('explanation'),
+                    id=e['id'],
+                    source_language=e.get('source_language'),
+                    target_language=e.get('target_language'),
+                    level=e.get('level'),
+                )
+                for e in data
+            ]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             sys.stderr.write(f'[oh-language-tutor] corrupt tutor file {self._path}: {exc}\n')
             return []
@@ -87,13 +97,30 @@ class TutorStore:
             await asyncio.to_thread(self._write, kept)
             return True
 
-    async def update_explanation_async(self, entry_id: str, explanation: str) -> bool:
-        """Set the explanation for *entry_id*. Returns False if not found."""
+    async def update_explanation_async(
+        self,
+        entry_id: str,
+        explanation: str,
+        *,
+        source_language: str,
+        target_language: str,
+        level: str,
+    ) -> bool:
+        """Set the explanation and freeze the audience for *entry_id*.
+
+        Returns False if the entry is not found. Audience values are
+        persisted alongside the explanation so subsequent Ask threads
+        on this line can reuse the audience under which it was
+        originally explained.
+        """
         async with self._get_write_lock():
             entries = self.load()
             for e in entries:
                 if e.id == entry_id:
                     e.explanation = explanation
+                    e.source_language = source_language
+                    e.target_language = target_language
+                    e.level = level
                     await asyncio.to_thread(self._write, entries)
                     return True
             return False
@@ -128,7 +155,17 @@ class TutorStore:
 
     def _write(self, entries: list[TutorEntry]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        data = [{'id': e.id, 'raw': e.raw, 'explanation': e.explanation} for e in entries]
+        data = [
+            {
+                'id': e.id,
+                'raw': e.raw,
+                'explanation': e.explanation,
+                'source_language': e.source_language,
+                'target_language': e.target_language,
+                'level': e.level,
+            }
+            for e in entries
+        ]
         with tempfile.NamedTemporaryFile(
             mode='w',
             encoding='utf-8',

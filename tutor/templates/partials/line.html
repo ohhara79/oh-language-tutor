@@ -35,6 +35,24 @@
       <span class="explain-status">Explaining…</span>
     </div>
     {% else %}
+    <div class="line-cfg">
+      <label class="cfg-field">
+        <span class="cfg-label">Learning</span>
+        <input type="text" class="cfg-source-language" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="cfg-field">
+        <span class="cfg-label">Native</span>
+        <input type="text" class="cfg-target-language" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="cfg-field">
+        <span class="cfg-label">Level</span>
+        <select class="cfg-level">
+          <option value="beginner">beginner</option>
+          <option value="intermediate">intermediate</option>
+          <option value="advanced">advanced</option>
+        </select>
+      </label>
+    </div>
     <div class="line-actions">
       <form hx-post="/commands/explain"
             hx-target="#line-{{ entry.id }}"

@@ -10,19 +10,23 @@
     const stack = [{view: 'list'}];
     let ignoreNextPopState = false;
 
-    // Audience settings: hydrate from localStorage, persist on change, and
-    // inject into every outbound /commands/explain and /commands/open_thread
-    // request via htmx:configRequest. send_message reuses an already-opened
-    // session, so its prompt is fixed at open time — no injection needed.
+    // Audience settings live in localStorage and surface as per-line
+    // controls inside each unexplained line's .line-detail. Only the
+    // currently active line shows its controls (CSS hides .line-detail
+    // on non-active lines), so changes feel naturally scoped to the
+    // line being acted on while still propagating to other lines via
+    // localStorage on the next activation. /commands/open_thread reads
+    // the audience that was frozen on the entry at Explain time, so we
+    // only inject these fields into /commands/explain.
     const CFG_DEFAULTS = {
         sourceLanguage: 'English',
         targetLanguage: 'Korean',
         level: 'intermediate',
     };
     const CFG_FIELDS = [
-        {key: 'sourceLanguage', el: 'cfg-source-language', form: 'source_language'},
-        {key: 'targetLanguage', el: 'cfg-target-language', form: 'target_language'},
-        {key: 'level',          el: 'cfg-level',           form: 'level'},
+        {key: 'sourceLanguage', cls: 'cfg-source-language', form: 'source_language'},
+        {key: 'targetLanguage', cls: 'cfg-target-language', form: 'target_language'},
+        {key: 'level',          cls: 'cfg-level',           form: 'level'},
     ];
     function cfgStorageKey(key) { return 'tutor.' + key; }
     function cfgGet(key) {
@@ -32,29 +36,43 @@
     function cfgSet(key, value) {
         localStorage.setItem(cfgStorageKey(key), value);
     }
-    function cfgHydrate() {
+    function cfgHydrateLine(line) {
+        if (!line) return;
         for (const f of CFG_FIELDS) {
-            const el = document.getElementById(f.el);
-            if (!el) continue;
-            el.value = cfgGet(f.key);
-            el.addEventListener('change', () => cfgSet(f.key, el.value));
-            if (el.tagName === 'INPUT') {
-                el.addEventListener('input', () => cfgSet(f.key, el.value));
-            }
+            const el = line.querySelector('.' + f.cls);
+            if (el) el.value = cfgGet(f.key);
         }
     }
-    const CFG_INJECT_PATHS = new Set(['/commands/explain', '/commands/open_thread']);
+    function cfgClassToKey(cls) {
+        for (const f of CFG_FIELDS) {
+            if (cls.contains(f.cls)) return f.key;
+        }
+        return null;
+    }
+    // Persist on change of any per-line control, regardless of which
+    // line it belongs to. New <input> typing fires 'input'; <select>
+    // fires 'change'.
+    function cfgOnFieldEvent(e) {
+        const t = e.target;
+        if (!t || !t.classList) return;
+        const key = cfgClassToKey(t.classList);
+        if (key !== null) cfgSet(key, t.value);
+    }
+    document.getElementById('stream-pane').addEventListener('input', cfgOnFieldEvent);
+    document.getElementById('stream-pane').addEventListener('change', cfgOnFieldEvent);
+
     document.body.addEventListener('htmx:configRequest', (evt) => {
         const path = evt.detail && evt.detail.path;
-        if (!CFG_INJECT_PATHS.has(path)) return;
+        if (path !== '/commands/explain') return;
         const params = evt.detail.parameters || {};
+        const elt = evt.detail && evt.detail.elt;
+        const line = elt && elt.closest ? elt.closest('.line') : null;
         for (const f of CFG_FIELDS) {
-            const el = document.getElementById(f.el);
+            const el = line ? line.querySelector('.' + f.cls) : null;
             params[f.form] = el ? el.value : cfgGet(f.key);
         }
         evt.detail.parameters = params;
     });
-    cfgHydrate();
 
     function current() { return stack[stack.length - 1]; }
 
@@ -127,6 +145,10 @@
         });
         if (!wasActive) {
             line.classList.add('active');
+            // Newly-active line: pull the latest audience values out of
+            // localStorage into its controls (no-op for explained lines,
+            // which don't render any).
+            cfgHydrateLine(line);
         }
         line.scrollIntoView({block: 'start', behavior: 'smooth'});
     });

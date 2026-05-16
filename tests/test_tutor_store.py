@@ -129,15 +129,62 @@ def test_load_tolerates_missing_explanation_key(tmp_path: Path) -> None:
     assert loaded[0].explanation is None
 
 
-async def test_update_explanation_async_sets_explanation(tmp_path: Path) -> None:
+async def test_update_explanation_async_sets_explanation_and_audience(tmp_path: Path) -> None:
     store = _store(tmp_path)
     await store.append_async(TutorEntry(raw='raw', id='to-explain'))
-    updated = await store.update_explanation_async('to-explain', 'the meaning')
+    updated = await store.update_explanation_async(
+        'to-explain',
+        'the meaning',
+        source_language='English',
+        target_language='Korean',
+        level='advanced',
+    )
     assert updated is True
-    loaded = store.load()
-    assert loaded[0].explanation == 'the meaning'
+    [loaded] = store.load()
+    assert loaded.explanation == 'the meaning'
+    assert loaded.source_language == 'English'
+    assert loaded.target_language == 'Korean'
+    assert loaded.level == 'advanced'
 
 
 async def test_update_explanation_async_unknown_returns_false(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    assert await store.update_explanation_async('missing', 'x') is False
+    result = await store.update_explanation_async(
+        'missing',
+        'x',
+        source_language='English',
+        target_language='Korean',
+        level='intermediate',
+    )
+    assert result is False
+
+
+def test_load_tolerates_missing_audience_keys(tmp_path: Path) -> None:
+    path = tmp_path / 'tutor.json'
+    path.write_text(
+        '[{"id": "legacy-1", "raw": "old line", "explanation": "old meaning"}]',
+        encoding='utf-8',
+    )
+    store = TutorStore(path)
+    [loaded] = store.load()
+    assert loaded.explanation == 'old meaning'
+    assert loaded.source_language is None
+    assert loaded.target_language is None
+    assert loaded.level is None
+
+
+def test_append_then_load_preserves_audience(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    entry = TutorEntry(
+        raw='raw',
+        explanation='e',
+        id='id-1',
+        source_language='Spanish',
+        target_language='Korean',
+        level='beginner',
+    )
+    store.append(entry)
+    [loaded] = store.load()
+    assert loaded.source_language == 'Spanish'
+    assert loaded.target_language == 'Korean'
+    assert loaded.level == 'beginner'
