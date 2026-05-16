@@ -70,7 +70,7 @@ base prompt built by the tool and will be injected automatically.
 | `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. |
 | `--explain-model` | `claude-opus-4-7` | Claude model id for streaming explanations. |
 | `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. |
-| `--state-dir` | `state/` | Directory for persisted state files. |
+| `--state-dir` | `state/scratch` | Write target for stdin lines. The web picker lists sibling dirs of this path so you can pick which dataset to view. |
 | `--web-host` | `127.0.0.1` | Bind address for the browser UI. |
 | `--web-port` | `8000` | Port for the browser UI. |
 

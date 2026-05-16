@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_STATE_DIR = PROJECT_DIR / 'state'
+DEFAULT_STATE_DIR = PROJECT_DIR / 'state' / 'scratch'
 DEFAULT_EXPLAIN_MODEL = 'claude-opus-4-7'
 DEFAULT_ASK_MODEL = 'claude-opus-4-7'
 

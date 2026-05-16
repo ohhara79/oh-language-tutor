@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tutor.args import (
@@ -19,6 +21,12 @@ def test_no_args_produces_namespace_with_defaults() -> None:
     assert args.web_port == 8000
     assert args.extra_system_prompt is None
     assert args.filter_regex is None
+    # state-dir defaults to a sentinel *inside* state/, so the picker's
+    # discovery parent resolves to state/ — listing real tutor-data dirs
+    # — rather than the project root.
+    state_dir_path = Path(args.state_dir)
+    assert state_dir_path.parent.name == 'state'
+    assert state_dir_path.name == 'scratch'
 
 
 def test_web_port_is_coerced_to_int() -> None:
