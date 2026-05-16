@@ -74,6 +74,42 @@
         evt.detail.parameters = params;
     });
 
+    // Header menu: open/close + "show only explained" filter (persisted in
+    // localStorage). The filter is a pure CSS body-class toggle; hidden lines
+    // remain in the DOM and respect the same rule when appended via SSE.
+    const FILTER_KEY = 'tutor.onlyExplained';
+    const menuBtn = document.getElementById('menu-btn');
+    const menuPanel = document.getElementById('menu-panel');
+    const filterToggle = document.getElementById('filter-only-explained');
+
+    function setMenuOpen(open) {
+        menuBtn.setAttribute('aria-expanded', String(open));
+        menuPanel.hidden = !open;
+    }
+    menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setMenuOpen(menuBtn.getAttribute('aria-expanded') !== 'true');
+    });
+    document.addEventListener('click', (e) => {
+        if (!menuPanel.hidden && !menuPanel.contains(e.target) && e.target !== menuBtn) {
+            setMenuOpen(false);
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !menuPanel.hidden) setMenuOpen(false);
+    });
+
+    function applyFilter(on) {
+        body.classList.toggle('filter-only-explained', on);
+        filterToggle.checked = on;
+    }
+    applyFilter(localStorage.getItem(FILTER_KEY) === '1');
+    filterToggle.addEventListener('change', () => {
+        const on = filterToggle.checked;
+        localStorage.setItem(FILTER_KEY, on ? '1' : '0');
+        applyFilter(on);
+    });
+
     function current() { return stack[stack.length - 1]; }
 
     function render() {

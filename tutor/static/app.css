@@ -9,11 +9,53 @@ body {
 }
 
 header {
+    position: relative;
     border-bottom: 1px solid #888;
     margin: 0 -1rem 1rem;
     padding: 0.75rem 1rem;
 }
-header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
+header h1 { margin: 0; font-size: 1.2rem; }
+
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.menu-btn {
+    padding: 0.25rem 0.6rem;
+    min-height: 36px;
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.menu-panel {
+    position: absolute;
+    top: 100%;
+    right: 1rem;
+    z-index: 50;
+    background: Canvas;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    min-width: 14rem;
+    padding: 0.25rem 0;
+}
+.menu-panel[hidden] { display: none; }
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    min-height: 44px;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.menu-item:hover { background: rgba(128, 128, 128, 0.1); }
+.menu-sep { border: 0; border-top: 1px solid #ddd; margin: 0.25rem 0; }
 
 .view-banner {
     margin: 0;
@@ -26,7 +68,6 @@ header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 }
 .view-banner code { font-size: 0.85rem; }
 .view-banner-note { color: #aaa; }
-.switch-link { margin-left: auto; font-size: 0.85rem; }
 
 .picker-sub { margin: 0.25rem 0 0; font-size: 0.85rem; color: #888; }
 .picker-sub code { font-size: 0.85rem; }
@@ -328,6 +369,9 @@ blockquote { border-left: 3px solid rgba(128, 128, 128, 0.3); margin: 0.5rem 0; 
 body.view-list .line:not(.active) .line-detail { display: none; }
 body.view-list .line.active .raw-toggle { font-weight: 600; }
 body.view-list #thread-conversation { display: none; }
+
+/* "Show only explained" filter (toggled from the header menu). */
+body.filter-only-explained .line:not(.has-explanation) { display: none; }
 
 /* Thread-detail view: only the conversation is shown. */
 body.view-thread #thread-topbar { display: flex; }
