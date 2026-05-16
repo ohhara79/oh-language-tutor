@@ -11,6 +11,10 @@
 <body class="view-list" hx-ext="sse" sse-connect="/events">
   <header>
     <h1>oh-language-tutor</h1>
+    <p class="view-banner">
+      Viewing <code>{{ view_dir }}</code>{% if not is_writing_view %} <span class="view-banner-note">— new stdin lines stream into <code>{{ writing_dir }}</code></span>{% endif %}
+      <a href="/" class="switch-link">Switch dataset</a>
+    </p>
   </header>
 
   <div id="thread-topbar">

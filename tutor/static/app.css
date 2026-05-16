@@ -15,6 +15,37 @@ header {
 }
 header h1 { margin: 0 0 0.25rem 0; font-size: 1.2rem; }
 
+.view-banner {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #888;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+.view-banner code { font-size: 0.85rem; }
+.view-banner-note { color: #aaa; }
+.switch-link { margin-left: auto; font-size: 0.85rem; }
+
+.picker-sub { margin: 0.25rem 0 0; font-size: 0.85rem; color: #888; }
+.picker-sub code { font-size: 0.85rem; }
+
+.picker-form { margin: 1rem 0; }
+.picker-list { list-style: none; padding: 0; margin: 0 0 1rem; }
+.picker-item { padding: 0.4rem 0; border-bottom: 1px solid #ddd; }
+.picker-item:last-child { border-bottom: none; }
+.picker-item label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.picker-name { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.picker-badge {
+    font-size: 0.75rem;
+    background: #0b6bcb;
+    color: #fff;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+}
+.picker-submit { margin-top: 0.5rem; }
+
 .line-cfg {
     display: flex;
     flex-wrap: wrap;

@@ -38,7 +38,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         '--state-dir',
         default=str(DEFAULT_STATE_DIR),
-        help='Directory for all persistent state files (default: %(default)s).',
+        help=(
+            'Write target for stdin lines (default: %(default)s). The web '
+            'picker lists sibling dirs of this path so the user can choose '
+            'which dataset to view; this flag only governs where new stdin '
+            'lines are persisted.'
+        ),
     )
     p.add_argument(
         '--web-host',

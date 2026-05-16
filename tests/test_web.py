@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import io
+import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -16,7 +17,16 @@ from tutor import web as web_mod
 from tutor.thread_store import ThreadStore
 from tutor.tutor_store import TutorStore
 from tutor.types import ThreadMessage, ThreadMeta, TutorEntry
-from tutor.web import WebContext, _uvicorn_log_config, build_app, build_template_env, thread_heading
+from tutor.web import (
+    VIEW_COOKIE,
+    DirSession,
+    WebContext,
+    _uvicorn_log_config,
+    build_app,
+    build_template_env,
+    list_state_dirs,
+    thread_heading,
+)
 from tutor.web_sink import WebSink
 
 if TYPE_CHECKING:
@@ -93,6 +103,27 @@ def test_uvicorn_log_config_structure():
         assert cfg['loggers'][name]['level'] == 'WARNING'
 
 
+# -- list_state_dirs ---------------------------------------------------------
+
+
+def test_list_state_dirs_returns_subdirs_sorted(tmp_path: Path):
+    (tmp_path / 'b-dir').mkdir()
+    (tmp_path / 'a-dir').mkdir()
+    (tmp_path / 'c-file').write_text('not a dir')
+    names = [p.name for p in list_state_dirs(tmp_path)]
+    assert names == ['a-dir', 'b-dir']
+
+
+def test_list_state_dirs_skips_hidden(tmp_path: Path):
+    (tmp_path / 'visible').mkdir()
+    (tmp_path / '.hidden').mkdir()
+    assert [p.name for p in list_state_dirs(tmp_path)] == ['visible']
+
+
+def test_list_state_dirs_missing_parent(tmp_path: Path):
+    assert list_state_dirs(tmp_path / 'no-such-dir') == []
+
+
 # -- Route handlers ----------------------------------------------------------
 
 
@@ -108,7 +139,7 @@ class _FakePool:
     deleted_tutor: list[str]
     reopened: list[str]
     active: set[str]
-    _active: dict[str, Any]  # satisfies `if thread_id not in ctx.pool._active` check
+    _active: dict[str, Any]  # satisfies `if thread_id not in session.pool._active` check
 
     def peek_meta(self, thread_id: str) -> ThreadMeta | None:
         return self.threads.get(thread_id)
@@ -150,20 +181,8 @@ class _FakePool:
         self.deleted_tutor.append(anchor_id)
 
 
-def _build_ctx(tmp_path: Path, *, extras_text: str | None = None) -> tuple[WebContext, _FakePool]:
-    args = argparse.Namespace(
-        state_dir=str(tmp_path),
-        explain_model='test-model',
-        ask_model='test-model',
-    )
-    log = io.StringIO()
-    tutor_store = TutorStore(tmp_path / 'tutor.json')
-    tutor_store.append(TutorEntry(raw='hi', explanation='meaning', id='a-1'))
-    thread_store = ThreadStore(tmp_path / 'threads')
-    env = build_template_env()
-    sink = WebSink(log=log, tutor_store=tutor_store, env=env)
-
-    pool = _FakePool(
+def _new_fake_pool() -> _FakePool:
+    return _FakePool(
         threads={},
         opened=[],
         sent=[],
@@ -175,16 +194,49 @@ def _build_ctx(tmp_path: Path, *, extras_text: str | None = None) -> tuple[WebCo
         _active={},
     )
 
-    stop = asyncio.Event()
-    ctx = WebContext(
-        args=args,
+
+def _make_session(state_dir: Path, *, env: Any) -> tuple[DirSession, _FakePool]:
+    """Build a DirSession backed by real stores but a fake pool."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    log = io.StringIO()
+    tutor_store = TutorStore(state_dir / 'tutor.json')
+    thread_store = ThreadStore(state_dir / 'threads')
+    sink = WebSink(log=log, tutor_store=tutor_store, env=env)
+    pool = _new_fake_pool()
+    session = DirSession(
+        state_dir=state_dir.resolve(),
         log=log,
-        filter_re=None,
-        stop_event=stop,
         tutor_store=tutor_store,
         thread_store=thread_store,
         sink=sink,
         pool=pool,  # pyright: ignore[reportArgumentType]
+    )
+    return session, pool
+
+
+def _build_ctx(tmp_path: Path, *, extras_text: str | None = None) -> tuple[WebContext, _FakePool]:
+    """Build a single-session context whose writing dir is *tmp_path*."""
+    # Put the writing dir as a subdir of tmp_path so list_state_dirs can find it.
+    writing_dir = tmp_path / 'writing'
+    args = argparse.Namespace(
+        state_dir=str(writing_dir),
+        explain_model='test-model',
+        ask_model='test-model',
+        web_host='127.0.0.1',
+        web_port=8000,
+    )
+    env = build_template_env()
+    session, pool = _make_session(writing_dir, env=env)
+    session.tutor_store.append(TutorEntry(raw='hi', explanation='meaning', id='a-1'))
+
+    ctx = WebContext(
+        args=args,
+        filter_re=None,
+        stop_event=asyncio.Event(),
+        writing_dir=writing_dir.resolve(),
+        discovery_parent=tmp_path.resolve(),
+        sessions={writing_dir.resolve(): session},
+        writing_session=session,
         extras_text=extras_text,
         env=env,
         version='test-v',
@@ -199,33 +251,138 @@ _AUDIENCE_FORM = {
 }
 
 
-def _client(ctx: WebContext) -> httpx.AsyncClient:
+def _client(ctx: WebContext, *, view_dir: str | None = None) -> httpx.AsyncClient:
+    """Build a test client with the view-state cookie pre-set.
+
+    Defaults to the writing dir's basename so route tests can hit cookie-gated
+    endpoints directly. Pass ``view_dir=''`` to send a request with no cookie.
+    """
     app = build_app(ctx)
     transport = httpx.ASGITransport(app=app)
-    return httpx.AsyncClient(transport=transport, base_url='http://test')
+    cookies: dict[str, str] = {}
+    name = ctx.writing_dir.name if view_dir is None else view_dir
+    if name:
+        cookies[VIEW_COOKIE] = name
+    return httpx.AsyncClient(transport=transport, base_url='http://test', cookies=cookies)
 
 
-async def test_get_index_renders_entries_without_header_controls(tmp_path: Path):
+# -- picker / open_state_dir -------------------------------------------------
+
+
+async def test_get_root_renders_picker_with_writing_badge(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
+    # Also create a sibling dir so the picker has more than one option.
+    (tmp_path / 'other').mkdir()
     async with _client(ctx) as client:
         r = await client.get('/')
     assert r.status_code == 200
     body = r.text
-    # Header no longer carries audience controls.
+    assert 'writing' in body  # the writing dir
+    assert 'other' in body  # the sibling
+    assert 'writes here' in body  # badge on the writing dir
+
+
+async def test_get_root_renders_when_no_dirs_present(tmp_path: Path):
+    # WebContext with discovery_parent that contains no subdirs.
+    ctx, _ = _build_ctx(tmp_path)
+    shutil.rmtree(ctx.writing_dir)
+    async with _client(ctx) as client:
+        r = await client.get('/')
+    assert r.status_code == 200
+    assert 'No tutor data' in r.text
+
+
+async def test_post_open_state_dir_sets_cookie_and_redirects(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    (tmp_path / 'other').mkdir()
+    async with _client(ctx, view_dir='') as client:
+        r = await client.post('/commands/open_state_dir', data={'dir_name': 'other'})
+    assert r.status_code == 303
+    assert r.headers['location'] == '/tutor'
+    assert r.cookies.get(VIEW_COOKIE) == 'other'
+
+
+async def test_post_open_state_dir_rejects_unknown_dir(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.post(
+            '/commands/open_state_dir',
+            data={'dir_name': 'no-such-dir'},
+        )
+    assert r.status_code == 400
+
+
+async def test_post_open_state_dir_rejects_traversal(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.post(
+            '/commands/open_state_dir',
+            data={'dir_name': '../../etc'},
+        )
+    assert r.status_code == 400
+
+
+async def test_get_tutor_without_cookie_redirects_to_picker(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.get('/tutor', follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers['location'] == '/'
+
+
+async def test_get_tutor_with_invalid_cookie_redirects_to_picker(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='no-such-dir') as client:
+        r = await client.get('/tutor', follow_redirects=False)
+    assert r.status_code == 303
+
+
+# -- /tutor index (cookie-routed) --------------------------------------------
+
+
+async def test_get_tutor_renders_entries(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.get('/tutor')
+    assert r.status_code == 200
+    body = r.text
     assert 'id="cfg-source-language"' not in body
     assert 'id="cfg-level"' not in body
     assert 'hi' in body  # pre-existing tutor entry
+    assert 'Switch dataset' in body  # header link
+    assert 'writing' in body  # current view-dir name shown
 
 
-async def test_get_index_renders_per_line_controls_on_unexplained_entries(tmp_path: Path):
+async def test_get_tutor_marks_non_writing_view(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    ctx.tutor_store.append(TutorEntry(raw='unexplained line', id='u-9'))
+    # Add a second dir + session, point cookie at it.
+    other_dir = tmp_path / 'other'
+    other_session, _other_pool = _make_session(other_dir, env=ctx.env)
+    other_session.tutor_store.append(TutorEntry(raw='from-other', id='o-1'))
+    ctx.sessions[other_dir.resolve()] = other_session
+    async with _client(ctx, view_dir='other') as client:
+        r = await client.get('/tutor')
+    assert r.status_code == 200
+    body = r.text
+    assert 'from-other' in body  # other dir's content
+    # Writing-dir entry a-1/'meaning' should not appear in the other dir's view.
+    assert 'meaning' not in body
+    assert 'data-entry-id="a-1"' not in body
+    assert 'stdin lines stream into' in body  # banner notes the split
+
+
+async def test_get_tutor_renders_per_line_controls_on_unexplained_entries(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='unexplained line', id='u-9'))
     async with _client(ctx) as client:
-        r = await client.get('/')
+        r = await client.get('/tutor')
     body = r.text
     assert 'class="cfg-source-language"' in body
     assert 'class="cfg-target-language"' in body
     assert 'class="cfg-level"' in body
+
+
+# -- threads / commands ------------------------------------------------------
 
 
 async def test_get_thread_404_when_missing(tmp_path: Path):
@@ -245,11 +402,17 @@ async def test_get_thread_reopens_and_renders(tmp_path: Path):
     assert pool.reopened == ['t-1']
 
 
+async def test_get_thread_without_cookie_returns_400(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.get('/threads/t-1')
+    assert r.status_code == 400
+
+
 async def test_post_open_thread_uses_audience_frozen_on_entry(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
-    # Replace the fixture's a-1 entry with one that has frozen audience.
-    ctx.tutor_store.delete('a-1')
-    ctx.tutor_store.append(
+    ctx.writing_session.tutor_store.delete('a-1')
+    ctx.writing_session.tutor_store.append(
         TutorEntry(
             raw='hi',
             explanation='meaning',
@@ -270,8 +433,6 @@ async def test_post_open_thread_uses_audience_frozen_on_entry(tmp_path: Path):
 
 async def test_post_open_thread_legacy_entry_falls_back_to_defaults(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
-    # Fixture entry a-1 has no audience fields — simulates a legacy entry
-    # written before audience was frozen on the entry.
     async with _client(ctx) as client:
         r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
     assert r.status_code == 200
@@ -323,6 +484,9 @@ async def test_post_delete_tutor_entry_returns_204(tmp_path: Path):
     assert pool.deleted_tutor == ['a-1']
 
 
+# -- explain ----------------------------------------------------------------
+
+
 async def test_post_explain_unknown_entry_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
@@ -358,9 +522,6 @@ async def test_post_explain_already_explained_is_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ):
     ctx, _ = _build_ctx(tmp_path)
-    # The fixture already inserted an explained entry id=a-1. Verify that
-    # POSTing explain on it returns the rendered partial without invoking
-    # the Claude client at all.
     called = False
 
     def factory(*, options: Any = None) -> FakeClaudeSDKClient:
@@ -386,7 +547,7 @@ async def test_post_explain_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ):
     ctx, _ = _build_ctx(tmp_path)
-    ctx.tutor_store.append(TutorEntry(raw='target raw', id='u-1'))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='target raw', id='u-1'))
     fake_client_factory.push(
         FakeClaudeSDKClient(
             [
@@ -406,27 +567,21 @@ async def test_post_explain_happy_path(
             '/commands/explain',
             data={'entry_id': 'u-1', **_AUDIENCE_FORM},
         )
-        # Immediate response is the streaming line placeholder, not the
-        # explanation itself — that arrives via SSE chunks + entry_explained.
         assert r.status_code == 200
         assert 'id="explain-stream-u-1"' in r.text
         assert 'Explaining' in r.text
-        # Drive the background streaming task to completion.
-        await ctx.sink.flush_pending_writes()
+        await ctx.writing_session.sink.flush_pending_writes()
 
-    # Persisted explanation, with audience frozen alongside.
-    [stored_explained] = [e for e in ctx.tutor_store.load() if e.id == 'u-1']
+    [stored_explained] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-1']
     assert stored_explained.explanation == 'the explanation'
     assert stored_explained.source_language == 'English'
     assert stored_explained.target_language == 'Korean'
     assert stored_explained.level == 'intermediate'
 
-    # Fresh subprocess actually spawned with target line and prior context.
     assert len(fake_client_factory.constructed) == 1
     [sent_msg] = fake_client_factory.constructed[0].queries
     assert 'target raw' in sent_msg
-    assert 'hi' in sent_msg  # the fixture's pre-existing a-1 entry as context
-    # System prompt is built from the request's audience values.
+    assert 'hi' in sent_msg
     [opts] = fake_client_factory.option_calls
     assert 'English' in opts.system_prompt
     assert 'Korean' in opts.system_prompt
@@ -439,23 +594,23 @@ async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
     monkeypatch: pytest.MonkeyPatch,
 ):
     ctx, _ = _build_ctx(tmp_path)
-    ctx.tutor_store.append(TutorEntry(raw='target', id='u-2'))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='target', id='u-2'))
     fake_client_factory.push(
         FakeClaudeSDKClient([[make_assistant(''), make_result('sid')]]),
     )
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
-    log = cast('io.StringIO', ctx.log)
+    log = cast('io.StringIO', ctx.writing_session.log)
     async with _client(ctx) as client:
         r = await client.post(
             '/commands/explain',
             data={'entry_id': 'u-2', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
-        await ctx.sink.flush_pending_writes()
+        await ctx.writing_session.sink.flush_pending_writes()
 
     assert 'empty response' in log.getvalue()
-    [stored] = [e for e in ctx.tutor_store.load() if e.id == 'u-2']
+    [stored] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-2']
     assert stored.explanation is None
 
 
@@ -465,22 +620,22 @@ async def test_post_explain_client_failure_logs_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
     ctx, _ = _build_ctx(tmp_path)
-    ctx.tutor_store.append(TutorEntry(raw='target', id='u-3'))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='target', id='u-3'))
     fake_client_factory.push(FakeClaudeSDKClient(raise_on_query=RuntimeError('boom')))
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
-    log = cast('io.StringIO', ctx.log)
+    log = cast('io.StringIO', ctx.writing_session.log)
     async with _client(ctx) as client:
         r = await client.post(
             '/commands/explain',
             data={'entry_id': 'u-3', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
-        await ctx.sink.flush_pending_writes()
+        await ctx.writing_session.sink.flush_pending_writes()
 
     assert 'explain failed' in log.getvalue()
     assert 'boom' in log.getvalue()
-    [stored] = [e for e in ctx.tutor_store.load() if e.id == 'u-3']
+    [stored] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-3']
     assert stored.explanation is None
 
 
@@ -490,10 +645,9 @@ async def test_post_explain_uses_context_window(
     monkeypatch: pytest.MonkeyPatch,
 ):
     ctx, _ = _build_ctx(tmp_path)
-    # Seed three preceding raws ahead of the target.
-    ctx.tutor_store.append(TutorEntry(raw='ctx-1', id='c1'))
-    ctx.tutor_store.append(TutorEntry(raw='ctx-2', id='c2'))
-    ctx.tutor_store.append(TutorEntry(raw='target', id='u-4'))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='ctx-1', id='c1'))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='ctx-2', id='c2'))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='target', id='u-4'))
     fake_client_factory.push(
         FakeClaudeSDKClient([[make_assistant('explained'), make_result('sid')]]),
     )
@@ -505,32 +659,52 @@ async def test_post_explain_uses_context_window(
             data={'entry_id': 'u-4', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
-        await ctx.sink.flush_pending_writes()
+        await ctx.writing_session.sink.flush_pending_writes()
 
     sent = fake_client_factory.constructed[0].queries[0]
     assert 'ctx-1' in sent
     assert 'ctx-2' in sent
     assert 'target' in sent
-    # The pre-existing fixture entry id=a-1 ('hi') sits before the seeded
-    # context entries but inside the 100-line window, so it shows up too.
     assert 'hi' in sent
 
 
+# -- SSE / two-dir isolation -------------------------------------------------
+
+
 async def test_events_endpoint_returns_sse_response(tmp_path: Path):
-    """GET /events responds 200 with SSE content-type. The generator body is
-    exercised indirectly via the other tests that hit subscribe/broadcast
-    paths; covering the blocking loop itself needs a real running server."""
+    """GET /events responds 200 with SSE content-type."""
     ctx, pool = _build_ctx(tmp_path)
     pool.threads['t-1'] = _meta(thread_id='t-1', anchor_raw='x')
-    # Pre-set stop_event so the generator's loop exits immediately after
-    # emitting the initial frames.
     ctx.stop_event.set()
 
-    app = build_app(ctx)
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url='http://test') as client:
+    async with _client(ctx) as client:
         r = await client.get('/events')
     assert r.status_code == 200
     assert r.headers['content-type'].startswith('text/event-stream')
     assert b': connected' in r.content
     assert b'event: thread_list' in r.content
+
+
+async def test_events_requires_view_cookie(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.get('/events')
+    assert r.status_code == 400
+
+
+async def test_writing_sink_does_not_emit_to_view_dir_subscribers(tmp_path: Path):
+    """Two-dir SSE isolation: a subscriber on dir B does not receive writes that the writing-dir sink emits."""
+    ctx, _ = _build_ctx(tmp_path)
+    # Materialize a second DirSession and put it in the cache.
+    other_dir = tmp_path / 'other'
+    other_session, _ = _make_session(other_dir, env=ctx.env)
+    ctx.sessions[other_dir.resolve()] = other_session
+
+    # Subscribe to the OTHER session's sink, then emit on the WRITING session.
+    q = other_session.sink.subscribe()
+    try:
+        ctx.writing_session.sink.on_entry_appended(TutorEntry(raw='new-line', id='x-1'))
+        # The other-dir subscriber should see nothing.
+        assert q.empty()
+    finally:
+        other_session.sink.unsubscribe(q)

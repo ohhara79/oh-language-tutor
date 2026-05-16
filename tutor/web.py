@@ -21,7 +21,7 @@ from claude_agent_sdk import (
     TextBlock,
 )
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -50,20 +50,45 @@ if TYPE_CHECKING:
 _TEMPLATES_DIR = Path(__file__).parent / 'templates'
 _STATIC_DIR = Path(__file__).parent / 'static'
 _STREAM_PAGE_N = 500
+# Cookie name used to remember which state dir the browser is currently
+# viewing. Set by ``POST /commands/open_state_dir`` and read by every other
+# route that needs to resolve a ``DirSession``.
+VIEW_COOKIE = 'view_state_dir'
 
 
 @dataclass
-class WebContext:
-    """Shared runtime state for the web server."""
+class DirSession:
+    """Per-state-dir bundle: stores, sink, pool, and the open log handle.
 
-    args: argparse.Namespace
+    Each tutor-data directory the app touches gets its own ``DirSession``.
+    The writing dir's session is created eagerly at startup; any additional
+    dirs are materialized lazily the first time the user picks them.
+    """
+
+    state_dir: Path
     log: TextIO
-    filter_re: re.Pattern[str] | None
-    stop_event: asyncio.Event
     tutor_store: TutorStore
     thread_store: ThreadStore
     sink: WebSink
     pool: FollowupThreadPool
+
+
+@dataclass
+class WebContext:
+    """Shared runtime state for the web server.
+
+    ``writing_session`` is bound at startup and never moves — stdin always
+    writes there. ``sessions`` caches every ``DirSession`` materialized
+    during the process lifetime; entries are reused on cookie revisits.
+    """
+
+    args: argparse.Namespace
+    filter_re: re.Pattern[str] | None
+    stop_event: asyncio.Event
+    writing_dir: Path
+    discovery_parent: Path
+    sessions: dict[Path, DirSession]
+    writing_session: DirSession
     extras_text: str | None  # appended to every per-request system prompt
     env: Environment
     version: str  # cache-buster for static assets
@@ -110,8 +135,92 @@ def build_template_env() -> Environment:
     return env
 
 
+def list_state_dirs(parent: Path) -> list[Path]:
+    """Return direct subdirectories of *parent*, sorted by name.
+
+    Hidden dirs (leading ``.``) and non-directory entries are skipped. Any
+    direct subdir is treated as a candidate tutor-data dir whether or not it
+    already contains ``tutor.json`` — picking an empty dir is a legitimate
+    way to start a fresh session.
+    """
+    if not parent.exists() or not parent.is_dir():
+        return []
+    return sorted(
+        (p for p in parent.iterdir() if p.is_dir() and not p.name.startswith('.')),
+        key=lambda p: p.name,
+    )
+
+
+def _open_session_log(state_dir: Path, args: argparse.Namespace) -> TextIO:
+    """Open the per-dir ``tutor.log`` in append mode and write a session-start banner."""
+    log_path = state_dir / 'tutor.log'
+    log = log_path.open('a', encoding='utf-8', buffering=1)
+    log.write(
+        f'\n=== session start explain_model={args.explain_model} '
+        f'ask_model={args.ask_model} '
+        f'bind={args.web_host}:{args.web_port} ===\n',
+    )
+    return log
+
+
+def make_dir_session(state_dir: Path, args: argparse.Namespace, env: Environment) -> DirSession:
+    """Create a fresh ``DirSession`` for *state_dir*, creating the dir if missing."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    log = _open_session_log(state_dir, args)
+    tutor_store = TutorStore(state_dir / 'tutor.json')
+    thread_store = ThreadStore(state_dir / 'threads')
+    sink = WebSink(log=log, tutor_store=tutor_store, env=env)
+    pool = FollowupThreadPool(
+        model=args.ask_model,
+        sink=sink,
+        store=thread_store,
+        tutor_store=tutor_store,
+        log=log,
+    )
+    # Warm the sink's cached thread list so the first /events subscriber on
+    # this dir sees it without waiting for a state change.
+    sink.on_thread_list(pool.list_threads())
+    return DirSession(
+        state_dir=state_dir,
+        log=log,
+        tutor_store=tutor_store,
+        thread_store=thread_store,
+        sink=sink,
+        pool=pool,
+    )
+
+
+def _get_or_create_session(ctx: WebContext, state_dir: Path) -> DirSession:
+    """Return the cached ``DirSession`` for *state_dir*, creating one if needed."""
+    key = state_dir.resolve()
+    cached = ctx.sessions.get(key)
+    if cached is not None:
+        return cached
+    session = make_dir_session(key, ctx.args, ctx.env)
+    ctx.sessions[key] = session
+    return session
+
+
+def _resolve_view_session(ctx: WebContext, request: Request) -> DirSession | None:
+    """Return the ``DirSession`` named by the view-state cookie, or ``None``.
+
+    Defends against path traversal: the cookie value must be a plain basename
+    matching a real direct subdir of ``ctx.discovery_parent``.
+    """
+    cookie_val = request.cookies.get(VIEW_COOKIE)
+    if not cookie_val:
+        return None
+    if '/' in cookie_val or '\\' in cookie_val or cookie_val.startswith('.'):
+        return None
+    valid_names = {p.name for p in list_state_dirs(ctx.discovery_parent)}
+    if cookie_val not in valid_names:
+        return None
+    return _get_or_create_session(ctx, ctx.discovery_parent / cookie_val)
+
+
 async def _stream_explain(
-    ctx: WebContext,
+    session: DirSession,
+    args: argparse.Namespace,
     entry: TutorEntry,
     user_msg: str,
     options: ClaudeAgentOptions,
@@ -129,6 +238,7 @@ async def _stream_explain(
     failure, rolls the line back to its unexplained state via
     :meth:`WebSink.on_explain_aborted` so the user can retry.
     """
+    _ = args  # currently unused; kept for symmetry with the call site
     buf: list[str] = []
     try:
         async with ClaudeSDKClient(options=options) as client:
@@ -137,19 +247,19 @@ async def _stream_explain(
                 if isinstance(msg, StreamEvent):
                     delta = text_delta(msg)
                     if delta:
-                        ctx.sink.on_explain_chunk(entry.id, delta)
+                        session.sink.on_explain_chunk(entry.id, delta)
                 elif isinstance(msg, AssistantMessage):
                     buf.extend(b.text for b in msg.content if isinstance(b, TextBlock))
     except Exception as exc:  # noqa: BLE001
-        ctx.sink.on_error(f'explain failed: {exc}')
-        ctx.sink.on_explain_aborted(entry)
+        session.sink.on_error(f'explain failed: {exc}')
+        session.sink.on_explain_aborted(entry)
         return
     explanation = ''.join(buf).strip()
     if not explanation:
-        ctx.sink.on_error('explain produced empty response')
-        ctx.sink.on_explain_aborted(entry)
+        session.sink.on_error('explain produced empty response')
+        session.sink.on_explain_aborted(entry)
         return
-    await ctx.tutor_store.update_explanation_async(
+    await session.tutor_store.update_explanation_async(
         entry.id,
         explanation,
         source_language=source_language,
@@ -164,7 +274,21 @@ async def _stream_explain(
         target_language=target_language,
         level=level,
     )
-    ctx.sink.on_entry_explained(updated)
+    session.sink.on_entry_explained(updated)
+
+
+def _require_view_session(ctx: WebContext, request: Request) -> DirSession:
+    """Resolve the view session or raise 400 — for command/data routes.
+
+    Page routes that should send the user back to the picker on a missing
+    cookie should call ``_resolve_view_session`` directly and return a
+    redirect; this helper is for routes that should never be hit without a
+    cookie (POST commands, partials, SSE).
+    """
+    session = _resolve_view_session(ctx, request)
+    if session is None:
+        raise HTTPException(status_code=400, detail='no view state dir selected')
+    return session
 
 
 def build_app(ctx: WebContext) -> FastAPI:
@@ -173,10 +297,36 @@ def build_app(ctx: WebContext) -> FastAPI:
     app.mount('/static', StaticFiles(directory=str(_STATIC_DIR)), name='static')
 
     @app.get('/', response_class=HTMLResponse)
-    async def index() -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
-        entries, has_more = ctx.tutor_store.load_tail(_STREAM_PAGE_N)
+    async def picker(request: Request) -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
+        dirs = list_state_dirs(ctx.discovery_parent)
+        current = request.cookies.get(VIEW_COOKIE) or ctx.writing_dir.name
+        html_body = ctx.env.get_template('picker.html').render(
+            dirs=[d.name for d in dirs],
+            writing_dir=ctx.writing_dir.name,
+            current_view=current,
+            version=ctx.version,
+        )
+        return HTMLResponse(content=html_body)
+
+    @app.post('/commands/open_state_dir')
+    async def open_state_dir(  # pyright: ignore[reportUnusedFunction]
+        dir_name: Annotated[str, Form()],
+    ) -> Response:
+        valid_names = {p.name for p in list_state_dirs(ctx.discovery_parent)}
+        if dir_name not in valid_names:
+            raise HTTPException(status_code=400, detail=f'unknown state dir: {dir_name!r}')
+        response = RedirectResponse(url='/tutor', status_code=303)
+        response.set_cookie(VIEW_COOKIE, dir_name, samesite='lax', httponly=False)
+        return response
+
+    @app.get('/tutor', response_class=HTMLResponse)
+    async def index(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
+        session = _resolve_view_session(ctx, request)
+        if session is None:
+            return RedirectResponse(url='/', status_code=303)
+        entries, has_more = session.tutor_store.load_tail(_STREAM_PAGE_N)
         oldest_id = entries[0].id if entries else None
-        threads = ctx.thread_store.list_threads()
+        threads = session.thread_store.list_threads()
         html_body = ctx.env.get_template('index.html').render(
             entries=entries,
             has_more=has_more,
@@ -184,15 +334,20 @@ def build_app(ctx: WebContext) -> FastAPI:
             page_n=_STREAM_PAGE_N,
             threads=threads,
             version=ctx.version,
+            view_dir=session.state_dir.name,
+            writing_dir=ctx.writing_dir.name,
+            is_writing_view=session.state_dir == ctx.writing_dir.resolve(),
         )
         return HTMLResponse(content=html_body)
 
     @app.get('/partials/older', response_class=HTMLResponse)
     async def older(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         before: str,
         n: int = _STREAM_PAGE_N,
     ) -> HTMLResponse:
-        result = ctx.tutor_store.load_before(before, n)
+        session = _require_view_session(ctx, request)
+        result = session.tutor_store.load_before(before, n)
         if result is None:
             raise HTTPException(status_code=404, detail='cursor not found')
         older_entries, has_more = result
@@ -207,14 +362,15 @@ def build_app(ctx: WebContext) -> FastAPI:
 
     @app.get('/events')
     async def events(request: Request) -> StreamingResponse:  # pyright: ignore[reportUnusedFunction]
-        q = ctx.sink.subscribe()
+        session = _require_view_session(ctx, request)
+        q = session.sink.subscribe()
 
         async def gen() -> AsyncIterator[bytes]:
             try:
                 yield b': connected\n\n'
                 # Push the current thread list immediately so new subscribers
                 # don't have to wait for the next state change to render it.
-                initial_threads = ctx.sink.latest_thread_list() or ctx.pool.list_threads()
+                initial_threads = session.sink.latest_thread_list() or session.pool.list_threads()
                 if initial_threads:
                     fragment = ctx.env.get_template('partials/thread_list.html').render(
                         threads=initial_threads,
@@ -231,7 +387,7 @@ def build_app(ctx: WebContext) -> FastAPI:
                         continue
                     yield f'event: {event}\ndata: {payload}\n\n'.encode()
             finally:
-                ctx.sink.unsubscribe(q)
+                session.sink.unsubscribe(q)
 
         return StreamingResponse(
             gen(),
@@ -244,22 +400,28 @@ def build_app(ctx: WebContext) -> FastAPI:
         )
 
     @app.get('/threads/{thread_id}', response_class=HTMLResponse)
-    async def get_thread(thread_id: str) -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
-        meta = ctx.pool.peek_meta(thread_id)
+    async def get_thread(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
+        thread_id: str,
+    ) -> HTMLResponse:
+        session = _require_view_session(ctx, request)
+        meta = session.pool.peek_meta(thread_id)
         if meta is None:
             raise HTTPException(status_code=404, detail='thread not found')
         # Ensure the pool has this thread marked active so subsequent send_message
         # reuses session state.
-        if thread_id not in ctx.pool._active:  # noqa: SLF001
-            await ctx.pool.reopen_thread(thread_id)
+        if thread_id not in session.pool._active:  # noqa: SLF001
+            await session.pool.reopen_thread(thread_id)
         html_body = ctx.env.get_template('partials/thread_conversation.html').render(meta=meta)
         return HTMLResponse(content=html_body)
 
     @app.post('/commands/open_thread', response_class=HTMLResponse)
     async def open_thread(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         anchor_id: Annotated[str, Form()],
     ) -> HTMLResponse:
-        entry = next((e for e in ctx.tutor_store.load() if e.id == anchor_id), None)
+        session = _require_view_session(ctx, request)
+        entry = next((e for e in session.tutor_store.load() if e.id == anchor_id), None)
         if entry is None:
             raise HTTPException(status_code=404, detail='entry not found')
         # Audience is frozen on the entry at Explain time. Legacy entries
@@ -270,26 +432,28 @@ def build_app(ctx: WebContext) -> FastAPI:
         level = entry.level or 'intermediate'
         _validate_audience(source_language, target_language, level)
         thread_id = new_thread_id()
-        await ctx.pool.open_thread(
+        await session.pool.open_thread(
             thread_id,
             anchor_id,
             source_language=source_language,
             target_language=target_language,
             level=level,
         )
-        meta = ctx.pool.peek_meta(thread_id)
+        meta = session.pool.peek_meta(thread_id)
         if meta is None:
             raise HTTPException(status_code=500, detail='thread open failed')
-        ctx.sink.on_thread_list(ctx.pool.list_threads())
+        session.sink.on_thread_list(session.pool.list_threads())
         html_body = ctx.env.get_template('partials/thread_conversation.html').render(meta=meta)
         return HTMLResponse(content=html_body)
 
     @app.post('/commands/send_message', response_class=HTMLResponse)
     async def send_message(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         thread_id: Annotated[str, Form()],
         text: Annotated[str, Form()],
     ) -> HTMLResponse:
-        await ctx.pool.send_message(thread_id, text)
+        session = _require_view_session(ctx, request)
+        await session.pool.send_message(thread_id, text)
         html_body = ctx.env.get_template('partials/send_message_result.html').render(
             thread_id=thread_id,
             text=text,
@@ -298,16 +462,20 @@ def build_app(ctx: WebContext) -> FastAPI:
 
     @app.post('/commands/hide_thread')
     async def hide_thread(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         thread_id: Annotated[str, Form()],
     ) -> Response:
-        await ctx.pool.hide_when_idle(thread_id)
+        session = _require_view_session(ctx, request)
+        await session.pool.hide_when_idle(thread_id)
         return Response(status_code=204)
 
     @app.post('/commands/delete_thread', response_class=HTMLResponse)
     async def delete_thread(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         thread_id: Annotated[str, Form()],
     ) -> HTMLResponse:
-        await ctx.pool.delete_thread(thread_id)
+        session = _require_view_session(ctx, request)
+        await session.pool.delete_thread(thread_id)
         return HTMLResponse(
             content=(
                 '<p class="empty">Thread deleted.</p><div id="thread-topbar-actions" hx-swap-oob="innerHTML"></div>'
@@ -316,33 +484,39 @@ def build_app(ctx: WebContext) -> FastAPI:
 
     @app.post('/commands/delete_tutor_entry')
     async def delete_tutor_entry(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         anchor_id: Annotated[str, Form()],
     ) -> Response:
-        await ctx.pool.delete_tutor_entry(anchor_id)
+        session = _require_view_session(ctx, request)
+        await session.pool.delete_tutor_entry(anchor_id)
         return Response(status_code=204)
 
     @app.post('/commands/clear_explanation')
     async def clear_explanation(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         anchor_id: Annotated[str, Form()],
     ) -> Response:
-        await ctx.pool.clear_tutor_entry_explanation(anchor_id)
+        session = _require_view_session(ctx, request)
+        await session.pool.clear_tutor_entry_explanation(anchor_id)
         return Response(status_code=204)
 
     @app.post('/commands/explain', response_class=HTMLResponse)
     async def explain(  # pyright: ignore[reportUnusedFunction]
+        request: Request,
         entry_id: Annotated[str, Form()],
         source_language: Annotated[str, Form()],
         target_language: Annotated[str, Form()],
         level: Annotated[str, Form()],
     ) -> HTMLResponse:
+        session = _require_view_session(ctx, request)
         _validate_audience(source_language, target_language, level)
-        entries = ctx.tutor_store.load()
+        entries = session.tutor_store.load()
         idx = next((i for i, e in enumerate(entries) if e.id == entry_id), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail='entry not found')
         target = entries[idx]
         if target.explanation is not None:
-            return HTMLResponse(content=ctx.sink.render_line(target, active=True))
+            return HTMLResponse(content=session.sink.render_line(target, active=True))
         try:
             system_prompt = build_system_prompt(
                 source_language,
@@ -362,7 +536,8 @@ def build_app(ctx: WebContext) -> FastAPI:
         user_msg = build_explain_user_message(target.raw, context_raws)
         task = asyncio.create_task(
             _stream_explain(
-                ctx,
+                session,
+                ctx.args,
                 target,
                 user_msg,
                 options,
@@ -371,8 +546,8 @@ def build_app(ctx: WebContext) -> FastAPI:
                 level=level,
             ),
         )
-        ctx.sink.track_explain(task)
-        return HTMLResponse(content=ctx.sink.render_line(target, streaming=True))
+        session.sink.track_explain(task)
+        return HTMLResponse(content=session.sink.render_line(target, streaming=True))
 
     return app
 
@@ -400,6 +575,15 @@ def _uvicorn_log_config() -> dict[str, Any]:
     }
 
 
+async def _close_session(session: DirSession) -> None:
+    """Flush and tear down one ``DirSession``'s resources."""
+    await session.pool.close_all()
+    await session.sink.flush_pending_writes()
+    session.log.write('=== session end ===\n')
+    with contextlib.suppress(Exception):
+        session.log.close()
+
+
 async def run_web(args: argparse.Namespace) -> int:
     """Run the browser UI. Serves a FastAPI app on localhost."""
     try:
@@ -410,90 +594,68 @@ async def run_web(args: argparse.Namespace) -> int:
 
     extras_text = read_extras_system_prompt(args.extra_system_prompt) if args.extra_system_prompt else None
 
-    state_dir = Path(args.state_dir).expanduser()
-    state_dir.mkdir(parents=True, exist_ok=True)
-    log_path = state_dir / 'tutor.log'
+    writing_dir = Path(args.state_dir).expanduser().resolve()
+    discovery_parent = writing_dir.parent
 
     stop_event = asyncio.Event()
+    env = build_template_env()
 
-    with log_path.open('a', encoding='utf-8', buffering=1) as log:
-        log.write(
-            f'\n=== session start explain_model={args.explain_model} '
-            f'ask_model={args.ask_model} '
-            f'bind={args.web_host}:{args.web_port} ===\n',
-        )
+    sessions: dict[Path, DirSession] = {}
+    writing_session = make_dir_session(writing_dir, args, env)
+    sessions[writing_dir] = writing_session
 
-        tutor_store = TutorStore(state_dir / 'tutor.json')
-        thread_store = ThreadStore(state_dir / 'threads')
-        env = build_template_env()
-        sink = WebSink(log=log, tutor_store=tutor_store, env=env)
+    ctx = WebContext(
+        args=args,
+        filter_re=filter_re,
+        stop_event=stop_event,
+        writing_dir=writing_dir,
+        discovery_parent=discovery_parent,
+        sessions=sessions,
+        writing_session=writing_session,
+        extras_text=extras_text,
+        env=env,
+        version=str(int(time.time())),
+    )
 
-        pool = FollowupThreadPool(
-            model=args.ask_model,
-            sink=sink,
-            store=thread_store,
-            tutor_store=tutor_store,
-            log=log,
-        )
+    stdin_task = asyncio.create_task(
+        stdin_loop(writing_session.sink, filter_re, stop_event),
+    )
 
-        ctx = WebContext(
-            args=args,
-            log=log,
-            filter_re=filter_re,
-            stop_event=stop_event,
-            tutor_store=tutor_store,
-            thread_store=thread_store,
-            sink=sink,
-            pool=pool,
-            extras_text=extras_text,
-            env=env,
-            version=str(int(time.time())),
-        )
+    app = build_app(ctx)
+    config = uvicorn.Config(
+        app,
+        host=args.web_host,
+        port=args.web_port,
+        log_level='warning',
+        access_log=False,
+        log_config=_uvicorn_log_config(),
+    )
+    server = uvicorn.Server(config)
+    # Disable uvicorn's own SIGINT/SIGTERM handlers so our handler below
+    # drives shutdown; the attribute is present at runtime even though
+    # basedpyright can't see it on Server's public API.
+    server.install_signal_handlers = False  # pyright: ignore[reportAttributeAccessIssue]
 
-        # Warm the sink's cached thread list so the first /events subscriber
-        # sees it without waiting for a state change.
-        sink.on_thread_list(pool.list_threads())
+    def _handle_sigint() -> None:
+        stop_event.set()
+        server.should_exit = True
 
-        stdin_task = asyncio.create_task(
-            stdin_loop(sink, filter_re, stop_event),
-        )
+    loop = asyncio.get_running_loop()
+    with contextlib.suppress(NotImplementedError):
+        loop.add_signal_handler(signal.SIGINT, _handle_sigint)
 
-        app = build_app(ctx)
-        config = uvicorn.Config(
-            app,
-            host=args.web_host,
-            port=args.web_port,
-            log_level='warning',
-            access_log=False,
-            log_config=_uvicorn_log_config(),
-        )
-        server = uvicorn.Server(config)
-        # Disable uvicorn's own SIGINT/SIGTERM handlers so our handler below
-        # drives shutdown; the attribute is present at runtime even though
-        # basedpyright can't see it on Server's public API.
-        server.install_signal_handlers = False  # pyright: ignore[reportAttributeAccessIssue]
+    sys.stderr.write(
+        f'[oh-language-tutor] web UI at http://{args.web_host}:{args.web_port}\n',
+    )
 
-        def _handle_sigint() -> None:
-            stop_event.set()
-            server.should_exit = True
-
-        loop = asyncio.get_running_loop()
-        with contextlib.suppress(NotImplementedError):
-            loop.add_signal_handler(signal.SIGINT, _handle_sigint)
-
-        sys.stderr.write(
-            f'[oh-language-tutor] web UI at http://{args.web_host}:{args.web_port}\n',
-        )
-
-        try:
-            await server.serve()
-        finally:
-            stop_event.set()
-            stdin_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await stdin_task
-            await pool.close_all()
-            await sink.flush_pending_writes()
-            log.write('=== session end ===\n')
+    try:
+        await server.serve()
+    finally:
+        stop_event.set()
+        stdin_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await stdin_task
+        for session in list(ctx.sessions.values()):
+            await _close_session(session)
 
     return 0

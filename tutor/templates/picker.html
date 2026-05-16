@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>oh-language-tutor — pick dataset</title>
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+</head>
+<body class="view-picker">
+  <header>
+    <h1>oh-language-tutor</h1>
+    <p class="picker-sub">Pick which tutor data to open. New stdin lines (if any) always write to <code>{{ writing_dir }}</code>.</p>
+  </header>
+
+  <main id="picker-pane">
+    {% if dirs %}
+    <form method="post" action="/commands/open_state_dir" class="picker-form">
+      <ul class="picker-list">
+        {% for name in dirs %}
+        <li class="picker-item">
+          <label>
+            <input type="radio" name="dir_name" value="{{ name }}"
+                   {% if name == current_view %}checked{% endif %}>
+            <span class="picker-name">{{ name }}</span>
+            {% if name == writing_dir %}<span class="picker-badge">writes here</span>{% endif %}
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+      <button type="submit" class="btn picker-submit">Open</button>
+    </form>
+    {% else %}
+    <p class="empty">No tutor data directories found.</p>
+    {% endif %}
+  </main>
+</body>
+</html>
