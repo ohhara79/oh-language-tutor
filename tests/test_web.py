@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import io
 import shutil
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
@@ -20,6 +19,7 @@ from tutor.types import ThreadMessage, ThreadMeta, TutorEntry
 from tutor.web import (
     VIEW_COOKIE,
     DirSession,
+    LazyLog,
     WebContext,
     _uvicorn_log_config,
     build_app,
@@ -196,9 +196,9 @@ def _new_fake_pool() -> _FakePool:
 
 
 def _make_session(state_dir: Path, *, env: Any) -> tuple[DirSession, _FakePool]:
-    """Build a DirSession backed by real stores but a fake pool."""
+    """Build a DirSession backed by real stores + a real lazy log + a fake pool."""
     state_dir.mkdir(parents=True, exist_ok=True)
-    log = io.StringIO()
+    log = LazyLog(state_dir / 'tutor.log', '=== test session start ===\n')
     tutor_store = TutorStore(state_dir / 'tutor.json')
     thread_store = ThreadStore(state_dir / 'threads')
     sink = WebSink(log=log, tutor_store=tutor_store, env=env)
@@ -212,6 +212,14 @@ def _make_session(state_dir: Path, *, env: Any) -> tuple[DirSession, _FakePool]:
         pool=pool,  # pyright: ignore[reportArgumentType]
     )
     return session, pool
+
+
+def _read_log(session: DirSession) -> str:
+    """Read the on-disk contents of a session's lazy log; ``''`` if not opened."""
+    log_path = session.state_dir / 'tutor.log'
+    if not log_path.exists():
+        return ''
+    return log_path.read_text(encoding='utf-8')
 
 
 def _build_ctx(tmp_path: Path, *, extras_text: str | None = None) -> tuple[WebContext, _FakePool]:
@@ -600,7 +608,6 @@ async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
     )
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
-    log = cast('io.StringIO', ctx.writing_session.log)
     async with _client(ctx) as client:
         r = await client.post(
             '/commands/explain',
@@ -609,7 +616,7 @@ async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
         assert r.status_code == 200
         await ctx.writing_session.sink.flush_pending_writes()
 
-    assert 'empty response' in log.getvalue()
+    assert 'empty response' in _read_log(ctx.writing_session)
     [stored] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-2']
     assert stored.explanation is None
 
@@ -624,7 +631,6 @@ async def test_post_explain_client_failure_logs_error(
     fake_client_factory.push(FakeClaudeSDKClient(raise_on_query=RuntimeError('boom')))
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
-    log = cast('io.StringIO', ctx.writing_session.log)
     async with _client(ctx) as client:
         r = await client.post(
             '/commands/explain',
@@ -633,8 +639,9 @@ async def test_post_explain_client_failure_logs_error(
         assert r.status_code == 200
         await ctx.writing_session.sink.flush_pending_writes()
 
-    assert 'explain failed' in log.getvalue()
-    assert 'boom' in log.getvalue()
+    log_text = _read_log(ctx.writing_session)
+    assert 'explain failed' in log_text
+    assert 'boom' in log_text
     [stored] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-3']
     assert stored.explanation is None
 
@@ -690,6 +697,44 @@ async def test_events_requires_view_cookie(tmp_path: Path):
     async with _client(ctx, view_dir='') as client:
         r = await client.get('/events')
     assert r.status_code == 400
+
+
+# -- Laziness: browse-only picks leave the dir clean --------------------------
+
+
+async def test_get_tutor_does_not_create_log_or_threads_dir(tmp_path: Path):
+    """Hitting /tutor on a brand-new dir reads only; it must not touch disk."""
+    ctx, _ = _build_ctx(tmp_path)
+    # Build a fresh, untouched DirSession for a sibling dir. Use the same
+    # path-based LazyLog as production.
+    other_dir = tmp_path / 'untouched'
+    other_dir.mkdir()
+    other_session, _ = _make_session(other_dir, env=ctx.env)
+    ctx.sessions[other_dir.resolve()] = other_session
+
+    # Sanity: no log file, no threads/ before the request.
+    assert not (other_dir / 'tutor.log').exists()
+    assert not (other_dir / 'threads').exists()
+
+    async with _client(ctx, view_dir='untouched') as client:
+        r = await client.get('/tutor')
+    assert r.status_code == 200
+
+    # Reading is a read; nothing on disk should have appeared.
+    assert not (other_dir / 'tutor.log').exists()
+    assert not (other_dir / 'threads').exists()
+    assert not other_session.log.opened
+
+
+async def test_lazy_log_creates_file_on_first_write(tmp_path: Path):
+    log = LazyLog(tmp_path / 'tutor.log', '=== header ===\n')
+    assert not log.opened
+    assert not (tmp_path / 'tutor.log').exists()
+    log.write('first line\n')
+    assert log.opened
+    assert (tmp_path / 'tutor.log').exists()
+    text = (tmp_path / 'tutor.log').read_text(encoding='utf-8')
+    assert text == '=== header ===\nfirst line\n'
 
 
 async def test_writing_sink_does_not_emit_to_view_dir_subscribers(tmp_path: Path):

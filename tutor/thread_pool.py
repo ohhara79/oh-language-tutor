@@ -29,11 +29,9 @@ from tutor.stream_util import text_delta
 from tutor.types import LineRecord, ThreadMessage, ThreadMeta
 
 if TYPE_CHECKING:
-    from typing import TextIO
-
     from tutor.thread_store import ThreadStore
     from tutor.tutor_store import TutorStore
-    from tutor.types import OutputSink
+    from tutor.types import LogSink, OutputSink
 
 
 @dataclass(slots=True)
@@ -59,13 +57,13 @@ class FollowupThreadPool:
         sink: OutputSink,
         store: ThreadStore,
         tutor_store: TutorStore,
-        log: TextIO,
+        log: LogSink,
     ) -> None:
         self._model: str = model
         self._sink: OutputSink = sink
         self._store: ThreadStore = store
         self._tutor_store: TutorStore = tutor_store
-        self._log: TextIO = log
+        self._log: LogSink = log
         self._active: dict[str, _ActiveThread] = {}
 
     # -- public API -----------------------------------------------------------

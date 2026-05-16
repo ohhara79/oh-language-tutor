@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import re
 import signal
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, override
 
 import uvicorn
 from claude_agent_sdk import (
@@ -56,17 +57,62 @@ _STREAM_PAGE_N = 500
 VIEW_COOKIE = 'view_state_dir'
 
 
+class LazyLog(io.TextIOBase):
+    """Append-mode log writer that defers opening the file until first write.
+
+    Browsing a tutor-data directory in the UI shouldn't dirty it on disk —
+    so we wrap the per-dir ``tutor.log`` in this lazy adapter. The header
+    line (``=== session start ... ===``) is buffered as the first thing to
+    write, so it only lands on disk when something else needs to write
+    too. ``flush`` and ``close`` are no-ops while unopened, so the
+    shutdown path can call them unconditionally.
+    """
+
+    def __init__(self, path: Path, header: str) -> None:
+        super().__init__()
+        self._path: Path = path
+        self._header: str = header
+        self._fp: TextIO | None = None
+
+    @property
+    def opened(self) -> bool:
+        return self._fp is not None
+
+    def _ensure_open(self) -> TextIO:
+        if self._fp is None:
+            self._fp = self._path.open('a', encoding='utf-8', buffering=1)
+            self._fp.write(self._header)
+        return self._fp
+
+    @override
+    def write(self, s: str) -> int:
+        return self._ensure_open().write(s)
+
+    @override
+    def flush(self) -> None:
+        if self._fp is not None:
+            self._fp.flush()
+
+    @override
+    def close(self) -> None:
+        if self._fp is not None:
+            self._fp.close()
+            self._fp = None
+        super().close()
+
+
 @dataclass
 class DirSession:
-    """Per-state-dir bundle: stores, sink, pool, and the open log handle.
+    """Per-state-dir bundle: stores, sink, pool, and a lazy log handle.
 
     Each tutor-data directory the app touches gets its own ``DirSession``.
     The writing dir's session is created eagerly at startup; any additional
-    dirs are materialized lazily the first time the user picks them.
+    dirs are materialized lazily the first time the user picks them. The
+    log handle inside is also lazy — see :class:`LazyLog`.
     """
 
     state_dir: Path
-    log: TextIO
+    log: LazyLog
     tutor_store: TutorStore
     thread_store: ThreadStore
     sink: WebSink
@@ -151,22 +197,20 @@ def list_state_dirs(parent: Path) -> list[Path]:
     )
 
 
-def _open_session_log(state_dir: Path, args: argparse.Namespace) -> TextIO:
-    """Open the per-dir ``tutor.log`` in append mode and write a session-start banner."""
-    log_path = state_dir / 'tutor.log'
-    log = log_path.open('a', encoding='utf-8', buffering=1)
-    log.write(
+def _make_lazy_log(state_dir: Path, args: argparse.Namespace) -> LazyLog:
+    """Build a :class:`LazyLog` for ``state_dir/tutor.log`` (no file created yet)."""
+    header = (
         f'\n=== session start explain_model={args.explain_model} '
         f'ask_model={args.ask_model} '
-        f'bind={args.web_host}:{args.web_port} ===\n',
+        f'bind={args.web_host}:{args.web_port} ===\n'
     )
-    return log
+    return LazyLog(state_dir / 'tutor.log', header)
 
 
 def make_dir_session(state_dir: Path, args: argparse.Namespace, env: Environment) -> DirSession:
     """Create a fresh ``DirSession`` for *state_dir*, creating the dir if missing."""
     state_dir.mkdir(parents=True, exist_ok=True)
-    log = _open_session_log(state_dir, args)
+    log = _make_lazy_log(state_dir, args)
     tutor_store = TutorStore(state_dir / 'tutor.json')
     thread_store = ThreadStore(state_dir / 'threads')
     sink = WebSink(log=log, tutor_store=tutor_store, env=env)
@@ -576,10 +620,16 @@ def _uvicorn_log_config() -> dict[str, Any]:
 
 
 async def _close_session(session: DirSession) -> None:
-    """Flush and tear down one ``DirSession``'s resources."""
+    """Flush and tear down one ``DirSession``'s resources.
+
+    The end banner is written only when the lazy log was actually opened by
+    some prior activity. Writing it unconditionally would force-open the
+    file just to record the session end, defeating the laziness.
+    """
     await session.pool.close_all()
     await session.sink.flush_pending_writes()
-    session.log.write('=== session end ===\n')
+    if session.log.opened:
+        session.log.write('=== session end ===\n')
     with contextlib.suppress(Exception):
         session.log.close()
 

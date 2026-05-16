@@ -9,12 +9,10 @@ from typing import TYPE_CHECKING
 from tutor.markdown_util import render_markdown
 
 if TYPE_CHECKING:
-    from typing import TextIO
-
     from jinja2 import Environment
 
     from tutor.tutor_store import TutorStore
-    from tutor.types import ThreadMeta, TutorEntry
+    from tutor.types import LogSink, ThreadMeta, TutorEntry
 
 
 # Per-subscriber queue bound. Drops rather than blocks the sink when a slow
@@ -29,11 +27,11 @@ class WebSink:
     def __init__(
         self,
         *,
-        log: TextIO,
+        log: LogSink,
         tutor_store: TutorStore,
         env: Environment,
     ) -> None:
-        self._log: TextIO = log
+        self._log: LogSink = log
         self._tutor_store: TutorStore = tutor_store
         self._env: Environment = env
         self._subs: set[asyncio.Queue[tuple[str, str]]] = set()

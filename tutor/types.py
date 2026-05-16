@@ -74,6 +74,22 @@ def format_created_at_utc(created_at: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Log sink protocol
+# ---------------------------------------------------------------------------
+
+
+class LogSink(Protocol):
+    """Minimal write-only interface for the per-session ``tutor.log``.
+
+    Production wraps the file with :class:`tutor.web.LazyLog` so a browsed
+    state dir stays clean on disk until something actually writes; tests
+    typically pass ``io.StringIO``. Both satisfy this protocol.
+    """
+
+    def write(self, s: str, /) -> int: ...
+
+
+# ---------------------------------------------------------------------------
 # Output sink protocol
 # ---------------------------------------------------------------------------
 

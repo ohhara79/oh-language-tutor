@@ -43,6 +43,21 @@ def test_new_thread_id_unique() -> None:
     assert len(ids) == 20
 
 
+def test_list_threads_missing_dir_returns_empty_without_creating(tmp_path: Path) -> None:
+    """Listing on a never-existed threads/ must not mkdir it."""
+    threads_dir = tmp_path / 'never-existed'
+    store = ThreadStore(threads_dir)
+    assert store.list_threads() == []
+    assert not threads_dir.exists()
+
+
+def test_delete_by_anchor_id_missing_dir_returns_empty_without_creating(tmp_path: Path) -> None:
+    threads_dir = tmp_path / 'never-existed'
+    store = ThreadStore(threads_dir)
+    assert store.delete_by_anchor_id('whatever') == []
+    assert not threads_dir.exists()
+
+
 def test_save_and_load_roundtrip(tmp_path: Path) -> None:
     store = ThreadStore(tmp_path)
     meta = _meta(

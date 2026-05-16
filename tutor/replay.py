@@ -5,9 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import TextIO
-
-    from tutor.types import OutputSink, ThreadMessage
+    from tutor.types import LogSink, OutputSink, ThreadMessage
 
 
 REPLAY_MAX_TURNS = 100
@@ -55,7 +53,7 @@ def pairs_from_thread(messages: list[ThreadMessage]) -> list[tuple[str, str]]:
     return pairs
 
 
-def notify_fallback(log: TextIO, sink: OutputSink, *, total: int, replayed: int) -> None:
+def notify_fallback(log: LogSink, sink: OutputSink, *, total: int, replayed: int) -> None:
     """Emit a one-line notice to the session log and the UI sink."""
     msg = f'resume failed; replayed {replayed}/{total} turns into a new session'
     log.write(f'=== {msg} ===\n')

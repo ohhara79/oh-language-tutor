@@ -41,8 +41,14 @@ class ThreadStore:
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def list_threads(self) -> list[ThreadMeta]:
-        """Read all thread JSON files, sorted by created_at descending."""
-        self._ensure_dir()
+        """Read all thread JSON files, sorted by created_at descending.
+
+        Returns ``[]`` if the threads directory does not yet exist — listing
+        is a read, so it should never create the directory itself. Writes
+        (``save_thread`` etc.) still ensure the directory before persisting.
+        """
+        if not self._dir.is_dir():
+            return []
         threads: list[ThreadMeta] = []
         for p in self._dir.glob('*.json'):
             meta = self._load_file(p)
@@ -80,10 +86,9 @@ class ThreadStore:
 
     def delete_by_anchor_id(self, anchor_id: str) -> list[str]:
         """Delete every thread file whose anchor_id matches. Returns deleted thread_ids."""
-        if not anchor_id:
+        if not anchor_id or not self._dir.is_dir():
             return []
         deleted: list[str] = []
-        self._ensure_dir()
         for p in self._dir.glob('*.json'):
             meta = self._load_file(p)
             if meta is not None and meta.anchor_id == anchor_id:
