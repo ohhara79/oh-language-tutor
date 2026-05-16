@@ -374,8 +374,6 @@ def build_app(ctx: WebContext) -> FastAPI:
             threads=threads,
             version=ctx.version,
             view_dir=session.state_dir.name,
-            writing_dir=ctx.writing_dir.name,
-            is_writing_view=session.state_dir == ctx.writing_dir.resolve(),
         )
         return HTMLResponse(content=html_body)
 
