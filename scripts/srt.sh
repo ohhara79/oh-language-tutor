@@ -1,6 +1,16 @@
 #!/bin/bash
 
+if [ -z "$1" ]; then
+    echo "usage: $0 <path/to/file.srt>" >&2
+    exit 1
+fi
+
 srt="$1"
+if [ ! -f "$srt" ]; then
+    echo "error: srt file not found: $srt" >&2
+    exit 1
+fi
+
 state_dir="state/$(basename "$srt" .srt)"
 
 if [ -d "$state_dir" ]; then
