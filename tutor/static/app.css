@@ -17,14 +17,22 @@ header {
     margin: 0 -1rem 1rem;
     padding: 0.75rem 1rem;
 }
-header h1 { margin: 0; font-size: 1.2rem; }
-
 .header-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.25rem;
+}
+
+.view-dir-label {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 1rem;
+    font-weight: 600;
+    min-width: 0;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .menu-btn {
@@ -59,18 +67,13 @@ header h1 { margin: 0; font-size: 1.2rem; }
 }
 .menu-item:hover { background: rgba(128, 128, 128, 0.1); }
 .menu-sep { border: 0; border-top: 1px solid #ddd; margin: 0.25rem 0; }
-
-.view-banner {
+.menu-info {
     margin: 0;
+    padding: 0.5rem 0.75rem;
     font-size: 0.85rem;
     color: #888;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: baseline;
 }
-.view-banner code { font-size: 0.85rem; }
-.view-banner-note { color: #aaa; }
+.menu-info code { font-size: 0.85rem; }
 
 .picker-sub { margin: 0.25rem 0 0; font-size: 0.85rem; color: #888; }
 .picker-sub code { font-size: 0.85rem; }

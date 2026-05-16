@@ -11,19 +11,20 @@
 <body class="view-list" hx-ext="sse" sse-connect="/events">
   <header>
     <div class="header-row">
-      <h1>oh-language-tutor</h1>
+      <span class="view-dir-label" title="{{ view_dir }}">{{ view_dir }}</span>
       <button type="button" id="menu-btn" class="btn menu-btn"
               aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel"
               aria-label="Menu">&#9776;</button>
     </div>
-    <p class="view-banner">
-      Viewing <code>{{ view_dir }}</code>{% if not is_writing_view %} <span class="view-banner-note">— new stdin lines stream into <code>{{ writing_dir }}</code></span>{% endif %}
-    </p>
     <div id="menu-panel" class="menu-panel" hidden>
       <label class="menu-item menu-toggle">
         <input type="checkbox" id="filter-only-explained">
         <span>Show only explained</span>
       </label>
+      {% if not is_writing_view %}
+      <hr class="menu-sep">
+      <p class="menu-info">Stdin &rarr; <code>{{ writing_dir }}</code></p>
+      {% endif %}
       <hr class="menu-sep">
       <a href="/" class="menu-item">Switch dataset</a>
     </div>
