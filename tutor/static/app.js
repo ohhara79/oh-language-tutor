@@ -299,11 +299,41 @@
     // Initial distribution after DOM parsed.
     distributeThreads();
 
-    // Land on the newest sentence on initial /tutor load. Matches the
-    // slider's default value (N = newest) and the SSE follow-the-stream
-    // auto-scroll. The IIFE runs after </body> parsing, so scrollHeight
-    // already reflects every rendered .line.
-    window.scrollTo(0, document.body.scrollHeight);
+    // Scroll-position memory: persist the topmost visible line's anchor id
+    // per dataset to localStorage so closing/reopening the browser lands
+    // the user back where they were. Falls back to "scroll to newest"
+    // (the previous default) when no saved anchor exists or the saved
+    // line is no longer rendered (e.g. it was deleted).
+    const datasetName = (document.querySelector('.view-dir-label')?.textContent || '').trim();
+    function readLastAnchors() {
+        try { return JSON.parse(localStorage.getItem('tutor.lastAnchors') || '{}'); }
+        catch (e) { return {}; }
+    }
+    function writeLastAnchors(obj) {
+        localStorage.setItem('tutor.lastAnchors', JSON.stringify(obj));
+    }
+    function topVisibleLineId() {
+        for (const line of document.querySelectorAll('#stream-pane .line')) {
+            if (line.getBoundingClientRect().bottom > 0) {
+                return line.dataset.anchorId || '';
+            }
+        }
+        return '';
+    }
+
+    let restoredScroll = false;
+    const savedAnchor = datasetName ? readLastAnchors()[datasetName] : '';
+    if (savedAnchor) {
+        const el = document.querySelector(
+            `.line[data-anchor-id="${CSS.escape(savedAnchor)}"]`);
+        if (el) {
+            el.scrollIntoView({block: 'start'});
+            restoredScroll = true;
+        }
+    }
+    if (!restoredScroll) {
+        window.scrollTo(0, document.body.scrollHeight);
+    }
 
     // Sticky-bottom auto-scroll: only follow new content if the user was
     // already at (or within NEAR_BOTTOM_PX of) the page bottom. Scrolling up
@@ -313,8 +343,19 @@
         return window.innerHeight + window.scrollY >= document.body.scrollHeight - NEAR_BOTTOM_PX;
     }
     let wasAtBottom = true;
+    let scrollSaveTimer = null;
     window.addEventListener('scroll', () => {
         wasAtBottom = isWindowAtBottom();
+        if (current().view !== 'list') return;
+        if (!datasetName) return;
+        clearTimeout(scrollSaveTimer);
+        scrollSaveTimer = setTimeout(() => {
+            const aid = topVisibleLineId();
+            if (!aid) return;
+            const map = readLastAnchors();
+            map[datasetName] = aid;
+            writeLastAnchors(map);
+        }, 200);
     }, {passive: true});
     document.addEventListener('DOMContentLoaded', () => {
         wasAtBottom = isWindowAtBottom();

@@ -340,7 +340,9 @@ def build_app(ctx: WebContext) -> FastAPI:
     app.mount('/static', StaticFiles(directory=str(_STATIC_DIR)), name='static')
 
     @app.get('/', response_class=HTMLResponse)
-    async def picker(request: Request) -> HTMLResponse:  # pyright: ignore[reportUnusedFunction]
+    async def picker(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
+        if request.query_params.get('picker') != '1' and _resolve_view_session(ctx, request) is not None:
+            return RedirectResponse(url='/tutor', status_code=303)
         dirs = list_state_dirs(ctx.discovery_parent)
         current = request.cookies.get(VIEW_COOKIE) or ctx.writing_dir.name
         html_body = ctx.env.get_template('picker.html').render(
@@ -359,7 +361,13 @@ def build_app(ctx: WebContext) -> FastAPI:
         if dir_name not in valid_names:
             raise HTTPException(status_code=400, detail=f'unknown state dir: {dir_name!r}')
         response = RedirectResponse(url='/tutor', status_code=303)
-        response.set_cookie(VIEW_COOKIE, dir_name, samesite='lax', httponly=False)
+        response.set_cookie(
+            VIEW_COOKIE,
+            dir_name,
+            samesite='lax',
+            httponly=False,
+            max_age=365 * 24 * 3600,
+        )
         return response
 
     @app.get('/tutor', response_class=HTMLResponse)
