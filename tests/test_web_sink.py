@@ -111,7 +111,7 @@ async def test_on_thread_done_with_text_renders_markdown(tmp_path: Path, jinja_e
     sink.on_thread_done('tid', '**bold**')
     event, fragment = await q.get()
     assert event == 'thread_done'
-    assert 'id="msg-stream-tid"' in fragment
+    assert 'hx-swap-oob="outerHTML:#msg-stream-tid"' in fragment
     assert '<strong>bold</strong>' in fragment
 
 
@@ -121,7 +121,7 @@ async def test_on_thread_done_empty_text_empty_placeholder(tmp_path: Path, jinja
     sink.on_thread_done('tid', '')
     event, fragment = await q.get()
     assert event == 'thread_done'
-    assert 'id="msg-stream-tid"' in fragment
+    assert 'hx-swap-oob="outerHTML:#msg-stream-tid"' in fragment
     assert fragment.endswith('></div>')
 
 
