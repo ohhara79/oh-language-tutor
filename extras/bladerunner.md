@@ -91,20 +91,6 @@ refer to the speaker, not the numeric id:
     72 = Mutant 3
     99 = VoiceOver
 
-NOISE TO SKIP: lines that are clearly ScummVM, SDL, or engine output —
-not game dialog — should be skipped (respond with the skip token).
-Examples of lines that are NOT dialog:
-
-- anything starting with `WARNING:`, `ERROR:`, or `DEBUG:`
-- `User picked target ...`
-- `Running Blade Runner with restored content ...`
-- `STARTUP.MIX:` / `HDFRAMES.DAT ...` / `CDFRAMESx.DAT ...`
-- `Using pixel format: ...`
-- `Subtitles version info: ...`
-- `Subtitles font '...' was loaded successfully.`
-- `SliceAnimations::openFrames: ...`
-- any line that is just a filename, a hex digest, or a byte-size report
-
 FLAVOR: this is a noir / cyberpunk / detective source. When explaining
 the dialog, favor:
 

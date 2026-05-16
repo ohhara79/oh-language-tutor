@@ -38,21 +38,6 @@ numeric speaker ids that are NOT listed above. For those:
   guessing — Korean learners benefit more from "an unnamed character"
   than from a wrong name
 
-NOISE TO SKIP: lines that are clearly ScummVM, SDL, or sword1 engine
-output — not game dialog — should be skipped (respond with the skip
-token). Examples of lines that are NOT dialog:
-
-- anything starting with `WARNING:`, `ERROR:`, or `DEBUG:`
-- `Sound::addToQueue(): ...`
-- `Sound::startSpeech: ...`
-- `Could not open speech.lis`
-- `Could not find room ... in speech.lis`
-- `Using FLAC Speech Cluster` / `Using Vorbis Speech Cluster` /
-  `Using MP3 Speech Cluster` / `Using uncompressed Speech Cluster`
-- `Using pixel format: ...`
-- savegame load/save status lines
-- any line that is just a filename, a hex digest, or a byte-size report
-
 FLAVOR: this is a 1990s British point-and-click adventure source. When
 explaining the dialog, favor:
 
