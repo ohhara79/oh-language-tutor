@@ -88,6 +88,16 @@ body:not(.view-picker) header {
 .menu-jump-label { font-size: 0.9rem; }
 #jump-slider { width: 100%; min-height: 32px; }
 
+.menu-cfg {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.menu-cfg .cfg-field { font-size: 0.9rem; }
+.menu-cfg .cfg-field input,
+.menu-cfg .cfg-field select { width: 100%; }
+
 .picker-form { margin: 1rem 0; }
 .picker-list { list-style: none; padding: 0; margin: 0 0 1rem; }
 .picker-item { padding: 0.4rem 0; border-bottom: 1px solid #ddd; }
@@ -103,12 +113,6 @@ body:not(.view-picker) header {
 }
 .picker-submit { margin-top: 0.5rem; }
 
-.line-cfg {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 0.75rem;
-    margin: 0 0 0.5rem;
-}
 .cfg-field {
     display: flex;
     flex-direction: column;

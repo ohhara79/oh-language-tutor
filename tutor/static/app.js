@@ -10,14 +10,11 @@
     const stack = [{view: 'list'}];
     let ignoreNextPopState = false;
 
-    // Audience settings live in localStorage and surface as per-line
-    // controls inside each unexplained line's .line-detail. Only the
-    // currently active line shows its controls (CSS hides .line-detail
-    // on non-active lines), so changes feel naturally scoped to the
-    // line being acted on while still propagating to other lines via
-    // localStorage on the next activation. /commands/open_thread reads
-    // the audience that was frozen on the entry at Explain time, so we
-    // only inject these fields into /commands/explain.
+    // Audience settings live in localStorage and surface as a single set
+    // of controls inside the header hamburger menu (.menu-cfg). They are
+    // global across all sentences; /commands/open_thread reads the audience
+    // that was frozen on the entry at Explain time, so we only inject these
+    // fields into /commands/explain.
     const CFG_DEFAULTS = {
         sourceLanguage: 'English',
         targetLanguage: 'Korean',
@@ -36,10 +33,10 @@
     function cfgSet(key, value) {
         localStorage.setItem(cfgStorageKey(key), value);
     }
-    function cfgHydrateLine(line) {
-        if (!line) return;
+    const menuCfg = document.querySelector('.menu-cfg');
+    function cfgHydrateMenu() {
         for (const f of CFG_FIELDS) {
-            const el = line.querySelector('.' + f.cls);
+            const el = menuCfg.querySelector('.' + f.cls);
             if (el) el.value = cfgGet(f.key);
         }
     }
@@ -49,27 +46,23 @@
         }
         return null;
     }
-    // Persist on change of any per-line control, regardless of which
-    // line it belongs to. New <input> typing fires 'input'; <select>
-    // fires 'change'.
+    // <input> typing fires 'input'; <select> fires 'change'.
     function cfgOnFieldEvent(e) {
         const t = e.target;
         if (!t || !t.classList) return;
         const key = cfgClassToKey(t.classList);
         if (key !== null) cfgSet(key, t.value);
     }
-    document.getElementById('stream-pane').addEventListener('input', cfgOnFieldEvent);
-    document.getElementById('stream-pane').addEventListener('change', cfgOnFieldEvent);
+    cfgHydrateMenu();
+    menuCfg.addEventListener('input', cfgOnFieldEvent);
+    menuCfg.addEventListener('change', cfgOnFieldEvent);
 
     document.body.addEventListener('htmx:configRequest', (evt) => {
         const path = evt.detail && evt.detail.path;
         if (path !== '/commands/explain') return;
         const params = evt.detail.parameters || {};
-        const elt = evt.detail && evt.detail.elt;
-        const line = elt && elt.closest ? elt.closest('.line') : null;
         for (const f of CFG_FIELDS) {
-            const el = line ? line.querySelector('.' + f.cls) : null;
-            params[f.form] = el ? el.value : cfgGet(f.key);
+            params[f.form] = cfgGet(f.key);
         }
         evt.detail.parameters = params;
     });
@@ -213,10 +206,6 @@
         });
         if (!wasActive) {
             line.classList.add('active');
-            // Newly-active line: pull the latest audience values out of
-            // localStorage into its controls (no-op for explained lines,
-            // which don't render any).
-            cfgHydrateLine(line);
         }
         line.scrollIntoView({block: 'start', behavior: 'smooth'});
     });
