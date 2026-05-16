@@ -75,6 +75,36 @@ async def test_stdin_loop_filter_regex_skips_non_matching():
     assert [e.raw for e in sink.appended] == ['KOREAN line']
 
 
+async def test_stdin_loop_filter_regex_capture_group_rewrites_line():
+    src = io.StringIO('1: aa bb\nnope\n')
+    sink = _RecordingSink()
+    await stdin_loop(
+        sink,
+        re.compile(r'^\d+:\s*(.+)$'),
+        asyncio.Event(),
+        use_thread=True,
+        input_file=src,
+    )
+    # Raw log keeps the original stdin line untouched.
+    assert sink.raws == ['1: aa bb', 'nope']
+    # Persisted entry uses group(1) only.
+    assert [e.raw for e in sink.appended] == ['aa bb']
+
+
+async def test_stdin_loop_filter_regex_falls_back_when_group_did_not_match():
+    # Alternation: group 1 captures only on the 'foo' branch; on 'bar' it's None.
+    src = io.StringIO('bar\n')
+    sink = _RecordingSink()
+    await stdin_loop(
+        sink,
+        re.compile(r'(foo)|bar'),
+        asyncio.Event(),
+        use_thread=True,
+        input_file=src,
+    )
+    assert [e.raw for e in sink.appended] == ['bar']
+
+
 async def test_stdin_loop_skips_blank_and_duplicate():
     src = io.StringIO('hi\nhi\n\nhi\n')
     sink = _RecordingSink()

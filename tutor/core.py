@@ -81,12 +81,17 @@ async def stdin_loop(
 
         sink.on_raw_line(raw_line)
 
-        if filter_re and not filter_re.search(raw_line):
+        line = raw_line
+        if filter_re:
+            m = filter_re.search(raw_line)
+            if not m:
+                continue
+            if filter_re.groups and m.group(1) is not None:
+                line = m.group(1)
+        if not line.strip():
             continue
-        if not raw_line.strip():
+        if line == last_kept:
             continue
-        if raw_line == last_kept:
-            continue
-        last_kept = raw_line
+        last_kept = line
 
-        sink.on_entry_appended(TutorEntry(raw=raw_line))
+        sink.on_entry_appended(TutorEntry(raw=line))

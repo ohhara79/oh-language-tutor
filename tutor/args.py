@@ -23,7 +23,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         '--filter-regex',
-        help='Only keep stdin lines matching this regex. Omit to keep every line.',
+        help=(
+            'Only keep stdin lines matching this regex. If the pattern has a '
+            'capture group, group 1 replaces the kept line (others are ignored). '
+            'Omit to keep every line.'
+        ),
     )
     p.add_argument(
         '--explain-model',

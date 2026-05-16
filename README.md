@@ -67,7 +67,7 @@ base prompt built by the tool and will be injected automatically.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--extra-system-prompt` | _off_ | Path to a file whose contents are appended to every per-request system prompt. |
-| `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. |
+| `--filter-regex` | _off_ | Only send lines matching this regex to the LLM. Saves cost on noisy sources. If the pattern has a capture group, group 1 replaces the sent line — e.g. `^\d+:\s*(.+)$` turns `1: aa bb` into `aa bb`. |
 | `--explain-model` | `claude-opus-4-7` | Claude model id for streaming explanations. |
 | `--ask-model` | `claude-opus-4-7` | Claude model id for ask-thread follow-ups. |
 | `--state-dir` | `state/scratch` | Write target for stdin lines. The web picker lists sibling dirs of this path so you can pick which dataset to view. |
