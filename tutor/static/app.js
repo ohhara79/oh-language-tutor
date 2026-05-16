@@ -76,6 +76,7 @@
     const filterToggle = document.getElementById('filter-only-explained');
 
     function setMenuOpen(open) {
+        if (open) jumpRefreshCurrent();
         menuBtn.setAttribute('aria-expanded', String(open));
         menuPanel.hidden = !open;
     }
@@ -128,6 +129,22 @@
         if (!lines.length) return;
         const i = Math.min(Math.max(index, 1), lines.length) - 1;
         lines[i].scrollIntoView({block: 'start'});
+    }
+    function topVisibleLineIndex() {
+        const lines = jumpLines();
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].getBoundingClientRect().bottom > 0) {
+                return i + 1;
+            }
+        }
+        return lines.length;
+    }
+    function jumpRefreshCurrent() {
+        const n = jumpLines().length;
+        if (n === 0) return;
+        const idx = topVisibleLineIndex();
+        jumpSlider.value = String(idx);
+        jumpCurrent.textContent = String(idx);
     }
     jumpSlider.addEventListener('input', () => {
         const v = Number(jumpSlider.value);
