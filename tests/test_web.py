@@ -6,13 +6,13 @@ import argparse
 import asyncio
 import io
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import pytest
 from claude_agent_sdk import ClaudeAgentOptions
 
-from tests.conftest import FakeClaudeSDKClient, make_assistant, make_result
+from tests.conftest import FakeClaudeSDKClient, make_assistant, make_result, make_text_delta
 from tutor import web as web_mod
 from tutor.thread_store import ThreadStore
 from tutor.tutor_store import TutorStore
@@ -311,15 +311,28 @@ async def test_post_explain_happy_path(
     ctx, _ = _build_ctx(tmp_path)
     ctx.tutor_store.append(TutorEntry(raw='target raw', id='u-1'))
     fake_client_factory.push(
-        FakeClaudeSDKClient([[make_assistant('the explanation'), make_result('sid')]]),
+        FakeClaudeSDKClient(
+            [
+                [
+                    make_text_delta('the '),
+                    make_text_delta('explanation'),
+                    make_assistant('the explanation'),
+                    make_result('sid'),
+                ]
+            ]
+        ),
     )
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
     async with _client(ctx) as client:
         r = await client.post('/commands/explain', data={'entry_id': 'u-1'})
-    assert r.status_code == 200
-    assert 'the explanation' in r.text
-    assert 'Ask' in r.text  # response is the explained variant
+        # Immediate response is the streaming line placeholder, not the
+        # explanation itself — that arrives via SSE chunks + entry_explained.
+        assert r.status_code == 200
+        assert 'id="explain-stream-u-1"' in r.text
+        assert 'Explaining' in r.text
+        # Drive the background streaming task to completion.
+        await ctx.sink.flush_pending_writes()
 
     # Persisted explanation
     [stored_explained] = [e for e in ctx.tutor_store.load() if e.id == 'u-1']
@@ -332,7 +345,7 @@ async def test_post_explain_happy_path(
     assert 'hi' in sent_msg  # the fixture's pre-existing a-1 entry as context
 
 
-async def test_post_explain_empty_response_returns_502(
+async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
     tmp_path: Path,
     fake_client_factory: FakeClaudeSDKClientFactory,
     monkeypatch: pytest.MonkeyPatch,
@@ -344,12 +357,18 @@ async def test_post_explain_empty_response_returns_502(
     )
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
+    log = cast('io.StringIO', ctx.log)
     async with _client(ctx) as client:
         r = await client.post('/commands/explain', data={'entry_id': 'u-2'})
-    assert r.status_code == 502
+        assert r.status_code == 200
+        await ctx.sink.flush_pending_writes()
+
+    assert 'empty response' in log.getvalue()
+    [stored] = [e for e in ctx.tutor_store.load() if e.id == 'u-2']
+    assert stored.explanation is None
 
 
-async def test_post_explain_client_failure_returns_500(
+async def test_post_explain_client_failure_logs_error(
     tmp_path: Path,
     fake_client_factory: FakeClaudeSDKClientFactory,
     monkeypatch: pytest.MonkeyPatch,
@@ -359,9 +378,16 @@ async def test_post_explain_client_failure_returns_500(
     fake_client_factory.push(FakeClaudeSDKClient(raise_on_query=RuntimeError('boom')))
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
 
+    log = cast('io.StringIO', ctx.log)
     async with _client(ctx) as client:
         r = await client.post('/commands/explain', data={'entry_id': 'u-3'})
-    assert r.status_code == 500
+        assert r.status_code == 200
+        await ctx.sink.flush_pending_writes()
+
+    assert 'explain failed' in log.getvalue()
+    assert 'boom' in log.getvalue()
+    [stored] = [e for e in ctx.tutor_store.load() if e.id == 'u-3']
+    assert stored.explanation is None
 
 
 async def test_post_explain_uses_context_window(
@@ -381,7 +407,9 @@ async def test_post_explain_uses_context_window(
 
     async with _client(ctx) as client:
         r = await client.post('/commands/explain', data={'entry_id': 'u-4'})
-    assert r.status_code == 200
+        assert r.status_code == 200
+        await ctx.sink.flush_pending_writes()
+
     sent = fake_client_factory.constructed[0].queries[0]
     assert 'ctx-1' in sent
     assert 'ctx-2' in sent

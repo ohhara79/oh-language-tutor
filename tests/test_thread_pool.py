@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.conftest import FakeClaudeSDKClient, make_assistant_multi, make_result
+from tests.conftest import (
+    FakeClaudeSDKClient,
+    make_assistant_multi,
+    make_result,
+    make_text_delta,
+)
 from tutor import thread_pool as tp_mod
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore
@@ -149,7 +154,16 @@ async def test_send_message_happy_path(
     tutor_store.append(TutorEntry(raw='r', explanation='e', id='a-1'))
     await pool.open_thread('t-1', 'a-1')
 
-    client = FakeClaudeSDKClient([[make_assistant_multi('foo ', 'bar'), make_result('new-sid')]])
+    client = FakeClaudeSDKClient(
+        [
+            [
+                make_text_delta('foo '),
+                make_text_delta('bar'),
+                make_assistant_multi('foo ', 'bar'),
+                make_result('new-sid'),
+            ]
+        ]
+    )
     fake_client_factory.push(client)
     monkeypatch.setattr(tp_mod, 'ClaudeSDKClient', fake_client_factory)
 

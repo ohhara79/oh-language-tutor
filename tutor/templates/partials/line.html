@@ -1,4 +1,5 @@
-<section class="line{% if active %} active{% endif %}{% if entry.explanation is not none %} has-explanation{% endif %}" id="line-{{ entry.id }}" data-anchor-id="{{ entry.id }}">
+{% set streaming = streaming|default(false) %}
+<section class="line{% if active %} active{% endif %}{% if entry.explanation is not none or streaming %} has-explanation{% endif %}{% if streaming %} streaming{% endif %}" id="line-{{ entry.id }}" data-anchor-id="{{ entry.id }}">
   <button type="button" class="raw-toggle">{{ raw_escaped | safe }}</button>
   <div class="line-threads" data-anchor-id="{{ entry.id }}"></div>
   <div class="line-detail">
@@ -25,6 +26,13 @@
           <span class="btn-label-busy">Deleting…</span>
         </button>
       </form>
+    </div>
+    {% elif streaming %}
+    <div class="explanation-body explain-stream-body">
+      <div id="explain-stream-{{ entry.id }}" class="explain-stream"></div>
+    </div>
+    <div class="line-actions">
+      <span class="explain-status">Explaining…</span>
     </div>
     {% else %}
     <div class="line-actions">

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, TextBlock
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterable
@@ -25,6 +25,23 @@ def make_assistant(text: str) -> AssistantMessage:
 def make_assistant_multi(*chunks: str) -> AssistantMessage:
     """Build an ``AssistantMessage`` with multiple ``TextBlock`` chunks."""
     return AssistantMessage(content=[TextBlock(text=c) for c in chunks], model='test-model')
+
+
+def make_text_delta(text: str) -> StreamEvent:
+    """Build a ``StreamEvent`` wrapping a single ``text_delta`` content block.
+
+    Used by tests that need to drive the streaming UI chunk path through
+    ``tutor.stream_util.text_delta``.
+    """
+    return StreamEvent(
+        uuid='test-uuid',
+        session_id='test-session',
+        event={
+            'type': 'content_block_delta',
+            'index': 0,
+            'delta': {'type': 'text_delta', 'text': text},
+        },
+    )
 
 
 def make_result(session_id: str) -> ResultMessage:

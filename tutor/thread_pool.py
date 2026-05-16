@@ -14,6 +14,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    StreamEvent,
     TextBlock,
 )
 
@@ -24,6 +25,7 @@ from tutor.replay import (
     notify_fallback,
     pairs_from_thread,
 )
+from tutor.stream_util import text_delta
 from tutor.types import LineRecord, ThreadMessage, ThreadMeta
 
 if TYPE_CHECKING:
@@ -258,6 +260,7 @@ class FollowupThreadPool:
             model=self._model,
             allowed_tools=[],
             resume=resume_session_id,
+            include_partial_messages=True,
         )
         client = ClaudeSDKClient(options=options)
         await client.__aenter__()
@@ -328,11 +331,12 @@ class FollowupThreadPool:
         try:
             await at.client.query(text)
             async for msg in at.client.receive_response():
-                if isinstance(msg, AssistantMessage):
-                    for block in msg.content:
-                        if isinstance(block, TextBlock):
-                            buf.append(block.text)
-                            self._sink.on_thread_chunk(at.thread_id, block.text)
+                if isinstance(msg, StreamEvent):
+                    delta = text_delta(msg)
+                    if delta:
+                        self._sink.on_thread_chunk(at.thread_id, delta)
+                elif isinstance(msg, AssistantMessage):
+                    buf.extend(b.text for b in msg.content if isinstance(b, TextBlock))
                 elif isinstance(msg, ResultMessage):
                     at.meta.session_id = msg.session_id
         except Exception as exc:  # noqa: BLE001

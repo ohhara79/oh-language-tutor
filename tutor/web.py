@@ -17,6 +17,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    StreamEvent,
     TextBlock,
 )
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -27,6 +28,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from tutor.core import stdin_loop
 from tutor.markdown_util import render_markdown
 from tutor.prompts import EXPLAIN_CONTEXT_K, build_explain_user_message, build_system_prompt
+from tutor.stream_util import text_delta
 from tutor.thread_pool import FollowupThreadPool
 from tutor.thread_store import ThreadStore, new_thread_id
 from tutor.tutor_store import TutorStore
@@ -90,15 +92,42 @@ def build_template_env() -> Environment:
     return env
 
 
-async def _run_explain(options: ClaudeAgentOptions, user_msg: str) -> str:
-    """Run one short-lived Claude session and return the joined assistant text."""
+async def _stream_explain(
+    ctx: WebContext,
+    entry: TutorEntry,
+    user_msg: str,
+) -> None:
+    """Run one short-lived Claude session, streaming chunks to the UI.
+
+    Lives past the originating HTTP request so a client disconnect doesn't
+    lose the in-progress explanation. On success, persists the explanation
+    and broadcasts the finalized line. On failure, rolls the line back to
+    its unexplained state via :meth:`WebSink.on_explain_aborted` so the
+    user can retry.
+    """
     buf: list[str] = []
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(user_msg)
-        async for msg in client.receive_response():
-            if isinstance(msg, AssistantMessage):
-                buf.extend(b.text for b in msg.content if isinstance(b, TextBlock))
-    return ''.join(buf).strip()
+    try:
+        async with ClaudeSDKClient(options=ctx.explain_options) as client:
+            await client.query(user_msg)
+            async for msg in client.receive_response():
+                if isinstance(msg, StreamEvent):
+                    delta = text_delta(msg)
+                    if delta:
+                        ctx.sink.on_explain_chunk(entry.id, delta)
+                elif isinstance(msg, AssistantMessage):
+                    buf.extend(b.text for b in msg.content if isinstance(b, TextBlock))
+    except Exception as exc:  # noqa: BLE001
+        ctx.sink.on_error(f'explain failed: {exc}')
+        ctx.sink.on_explain_aborted(entry)
+        return
+    explanation = ''.join(buf).strip()
+    if not explanation:
+        ctx.sink.on_error('explain produced empty response')
+        ctx.sink.on_explain_aborted(entry)
+        return
+    await ctx.tutor_store.update_explanation_async(entry.id, explanation)
+    updated = TutorEntry(raw=entry.raw, explanation=explanation, id=entry.id)
+    ctx.sink.on_entry_explained(updated)
 
 
 def build_app(ctx: WebContext) -> FastAPI:
@@ -255,18 +284,9 @@ def build_app(ctx: WebContext) -> FastAPI:
             return HTMLResponse(content=ctx.sink.render_line(target, active=True))
         context_raws = [e.raw for e in entries[max(0, idx - EXPLAIN_CONTEXT_K) : idx]]
         user_msg = build_explain_user_message(target.raw, context_raws)
-        try:
-            explanation = await _run_explain(ctx.explain_options, user_msg)
-        except Exception as exc:
-            ctx.sink.on_error(f'explain failed: {exc}')
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        if not explanation:
-            ctx.sink.on_error('explain produced empty response')
-            raise HTTPException(status_code=502, detail='empty explanation')
-        await ctx.tutor_store.update_explanation_async(entry_id, explanation)
-        updated = TutorEntry(raw=target.raw, explanation=explanation, id=target.id)
-        ctx.sink.on_entry_explained(updated)
-        return HTMLResponse(content=ctx.sink.render_line(updated, active=True))
+        task = asyncio.create_task(_stream_explain(ctx, target, user_msg))
+        ctx.sink.track_explain(task)
+        return HTMLResponse(content=ctx.sink.render_line(target, streaming=True))
 
     return app
 
@@ -312,6 +332,7 @@ async def run_web(args: argparse.Namespace) -> int:
         system_prompt=system_prompt,
         model=args.explain_model,
         allowed_tools=[],
+        include_partial_messages=True,
     )
 
     stop_event = asyncio.Event()

@@ -38,6 +38,7 @@ class WebSink:
         self._env: Environment = env
         self._subs: set[asyncio.Queue[tuple[str, str]]] = set()
         self._pending_writes: set[asyncio.Task[None]] = set()
+        self._pending_explains: set[asyncio.Task[None]] = set()
         self._thread_list: list[ThreadMeta] = []
 
     # -- subscription ---------------------------------------------------------
@@ -51,9 +52,18 @@ class WebSink:
         self._subs.discard(q)
 
     async def flush_pending_writes(self) -> None:
-        """Await every outstanding TutorStore.append_async task."""
-        if self._pending_writes:
-            await asyncio.gather(*self._pending_writes, return_exceptions=True)
+        """Await every outstanding background task (store writes + explains)."""
+        outstanding: list[asyncio.Task[None]] = [
+            *self._pending_writes,
+            *self._pending_explains,
+        ]
+        if outstanding:
+            await asyncio.gather(*outstanding, return_exceptions=True)
+
+    def track_explain(self, task: asyncio.Task[None]) -> None:
+        """Track an in-flight explain task so app shutdown can await it."""
+        self._pending_explains.add(task)
+        task.add_done_callback(self._pending_explains.discard)
 
     def latest_thread_list(self) -> list[ThreadMeta]:
         """Return the cached thread list (as last broadcast)."""
@@ -64,15 +74,27 @@ class WebSink:
     def on_raw_line(self, raw: str) -> None:
         self._log.write(raw + '\n')
 
-    def render_line(self, entry: TutorEntry, *, active: bool = False) -> str:
-        """Render a TutorEntry to its partial HTML (explained or unexplained)."""
+    def render_line(
+        self,
+        entry: TutorEntry,
+        *,
+        active: bool = False,
+        streaming: bool = False,
+    ) -> str:
+        """Render a TutorEntry to its partial HTML.
+
+        Three states: explained (rendered markdown body), streaming (empty
+        container that SSE chunks land in), or unexplained (Explain/Delete
+        buttons). ``streaming`` implies ``active`` so the line is open.
+        """
         explanation_html = render_markdown(entry.explanation) if entry.explanation is not None else ''
         return self._env.get_template('partials/line.html').render(
             entry=entry,
             threads=[],
             raw_escaped=html.escape(entry.raw),
             explanation_html=explanation_html,
-            active=active,
+            active=active or streaming,
+            streaming=streaming,
         )
 
     def on_entry_appended(self, entry: TutorEntry) -> None:
@@ -98,6 +120,20 @@ class WebSink:
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
         fragment = f'<span hx-swap-oob="beforeend:#msg-stream-{html.escape(thread_id)}">{html.escape(chunk)}</span>'
         self._broadcast('thread_chunk', fragment)
+
+    def on_explain_chunk(self, entry_id: str, chunk: str) -> None:
+        fragment = f'<span hx-swap-oob="beforeend:#explain-stream-{html.escape(entry_id)}">{html.escape(chunk)}</span>'
+        self._broadcast('explain_chunk', fragment)
+
+    def on_explain_aborted(self, entry: TutorEntry) -> None:
+        """Roll the line back to its unexplained variant after an explain failure."""
+        fragment = self.render_line(entry)
+        oob_fragment = fragment.replace(
+            f'id="line-{entry.id}"',
+            f'id="line-{entry.id}" hx-swap-oob="outerHTML"',
+            1,
+        )
+        self._broadcast('explain_aborted', oob_fragment)
 
     def on_thread_done(self, thread_id: str, last_assistant: str) -> None:
         # Replace the streamed span container with a properly-rendered
