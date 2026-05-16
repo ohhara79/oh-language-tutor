@@ -310,6 +310,12 @@
     // Initial distribution after DOM parsed.
     distributeThreads();
 
+    // Land on the newest sentence on initial /tutor load. Matches the
+    // slider's default value (N = newest) and the SSE follow-the-stream
+    // auto-scroll. The IIFE runs after </body> parsing, so scrollHeight
+    // already reflects every rendered .line.
+    window.scrollTo(0, document.body.scrollHeight);
+
     // Sticky-bottom auto-scroll: only follow new content if the user was
     // already at (or within NEAR_BOTTOM_PX of) the page bottom. Scrolling up
     // pauses auto-scroll; scrolling back to the bottom resumes it.
