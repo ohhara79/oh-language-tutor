@@ -220,6 +220,25 @@ class FollowupThreadPool:
         self._sink.on_thread_list(self.list_threads())
         self._sink.on_tutor_entry_removed(anchor_id)
 
+    async def clear_tutor_entry_explanation(self, anchor_id: str) -> None:
+        """Drop the explanation on a tutor entry; cascade-delete its threads.
+
+        The raw line is preserved; the entry reverts to its unexplained
+        variant in every connected tab so the user can re-Explain it.
+        """
+        if not anchor_id:
+            return
+        active_to_close = [tid for tid, at in self._active.items() if at.meta.anchor_id == anchor_id]
+        for tid in active_to_close:
+            await self.hide_thread(tid)
+        self._store.delete_by_anchor_id(anchor_id)
+        cleared = await self._tutor_store.clear_explanation_async(anchor_id)
+        self._sink.on_thread_list(self.list_threads())
+        if cleared:
+            entry = next((e for e in self._tutor_store.load() if e.id == anchor_id), None)
+            if entry is not None:
+                self._sink.on_entry_explanation_cleared(entry)
+
     async def close_all(self) -> None:
         """Disconnect all active threads on shutdown."""
         for tid in list(self._active):

@@ -97,6 +97,24 @@ class TutorStore:
             await asyncio.to_thread(self._write, kept)
             return True
 
+    async def clear_explanation_async(self, entry_id: str) -> bool:
+        """Reset explanation + audience on *entry_id* back to None.
+
+        Returns False if not found. The raw line is preserved so the user
+        can re-Explain it.
+        """
+        async with self._get_write_lock():
+            entries = self.load()
+            for e in entries:
+                if e.id == entry_id:
+                    e.explanation = None
+                    e.source_language = None
+                    e.target_language = None
+                    e.level = None
+                    await asyncio.to_thread(self._write, entries)
+                    return True
+            return False
+
     async def update_explanation_async(
         self,
         entry_id: str,

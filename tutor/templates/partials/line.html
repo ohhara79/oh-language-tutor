@@ -16,8 +16,8 @@
           <span class="btn-label-busy">Opening…</span>
         </button>
       </form>
-      <form hx-post="/commands/delete_tutor_entry"
-            hx-confirm="Delete this line and its threads?"
+      <form hx-post="/commands/clear_explanation"
+            hx-confirm="Delete this explanation and its threads?"
             hx-swap="none"
             hx-disabled-elt="find button">
         <input type="hidden" name="anchor_id" value="{{ entry.id }}">
@@ -62,16 +62,6 @@
         <button type="submit" class="btn btn-ask">
           <span class="btn-label-idle">Explain</span>
           <span class="btn-label-busy">Explaining…</span>
-        </button>
-      </form>
-      <form hx-post="/commands/delete_tutor_entry"
-            hx-confirm="Delete this line?"
-            hx-swap="none"
-            hx-disabled-elt="find button">
-        <input type="hidden" name="anchor_id" value="{{ entry.id }}">
-        <button type="submit" class="btn btn-del">
-          <span class="btn-label-idle">Delete</span>
-          <span class="btn-label-busy">Deleting…</span>
         </button>
       </form>
     </div>

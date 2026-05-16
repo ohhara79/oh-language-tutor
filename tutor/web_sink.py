@@ -155,6 +155,16 @@ class WebSink:
         fragment = f'<div id="line-{html.escape(anchor_id)}" hx-swap-oob="delete"></div>'
         self._broadcast('tutor_entry_removed', fragment)
 
+    def on_entry_explanation_cleared(self, entry: TutorEntry) -> None:
+        """Replace the explained line in every tab with its unexplained variant."""
+        fragment = self.render_line(entry)
+        oob_fragment = fragment.replace(
+            f'id="line-{entry.id}"',
+            f'id="line-{entry.id}" hx-swap-oob="outerHTML"',
+            1,
+        )
+        self._broadcast('entry_explanation_cleared', oob_fragment)
+
     def on_error(self, msg: str) -> None:
         self._log.write(f'[error] {msg}\n')
         fragment = self._env.get_template('partials/toast.html').render(message=msg)

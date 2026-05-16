@@ -321,6 +321,13 @@ def build_app(ctx: WebContext) -> FastAPI:
         await ctx.pool.delete_tutor_entry(anchor_id)
         return Response(status_code=204)
 
+    @app.post('/commands/clear_explanation')
+    async def clear_explanation(  # pyright: ignore[reportUnusedFunction]
+        anchor_id: Annotated[str, Form()],
+    ) -> Response:
+        await ctx.pool.clear_tutor_entry_explanation(anchor_id)
+        return Response(status_code=204)
+
     @app.post('/commands/explain', response_class=HTMLResponse)
     async def explain(  # pyright: ignore[reportUnusedFunction]
         entry_id: Annotated[str, Form()],

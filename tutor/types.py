@@ -114,6 +114,10 @@ class OutputSink(Protocol):
         """A left-pane tutor entry was deleted; the UI should drop it."""
         ...
 
+    def on_entry_explanation_cleared(self, entry: TutorEntry) -> None:
+        """An entry's explanation was cleared; UI reverts to the unexplained variant."""
+        ...
+
     def on_error(self, msg: str) -> None:
         """An error occurred that the UI should display."""
         ...

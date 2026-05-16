@@ -33,6 +33,7 @@ class RecordingSink:
         self.dones: list[tuple[str, str]] = []
         self.thread_lists: list[list[ThreadMeta]] = []
         self.entry_removed: list[str] = []
+        self.entry_explanation_cleared: list[str] = []
 
     def on_raw_line(self, raw: str) -> None: ...
     def on_entry_appended(self, entry: TutorEntry) -> None: ...
@@ -48,6 +49,9 @@ class RecordingSink:
 
     def on_tutor_entry_removed(self, anchor_id: str) -> None:
         self.entry_removed.append(anchor_id)
+
+    def on_entry_explanation_cleared(self, entry: TutorEntry) -> None:
+        self.entry_explanation_cleared.append(entry.id)
 
     def on_error(self, msg: str) -> None:
         self.errors.append(msg)
