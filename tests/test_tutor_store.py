@@ -188,3 +188,109 @@ def test_append_then_load_preserves_audience(tmp_path: Path) -> None:
     assert loaded.source_language == 'Spanish'
     assert loaded.target_language == 'Korean'
     assert loaded.level == 'beginner'
+
+
+async def test_clear_explanation_async_resets_explanation_and_audience(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    await store.append_async(
+        TutorEntry(
+            raw='raw',
+            explanation='meaning',
+            id='id-1',
+            source_language='English',
+            target_language='Korean',
+            level='intermediate',
+        ),
+    )
+    cleared = await store.clear_explanation_async('id-1')
+    assert cleared is True
+    [loaded] = store.load()
+    assert loaded.raw == 'raw'  # raw line preserved
+    assert loaded.explanation is None
+    assert loaded.source_language is None
+    assert loaded.target_language is None
+    assert loaded.level is None
+
+
+async def test_clear_explanation_async_unknown_returns_false(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    await store.append_async(TutorEntry(raw='r', explanation='e', id='other'))
+    assert await store.clear_explanation_async('missing') is False
+    # Existing entry untouched
+    [loaded] = store.load()
+    assert loaded.explanation == 'e'
+
+
+def test_load_before_returns_older_entries_oldest_first(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    for i in range(5):
+        store.append(TutorEntry(raw=f'r-{i}', id=f'id-{i}'))
+    result = store.load_before('id-3', 2)
+    assert result is not None
+    older, has_more = result
+    assert [e.id for e in older] == ['id-1', 'id-2']
+    assert has_more is True
+
+
+def test_load_before_at_start_reports_no_more(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    for i in range(3):
+        store.append(TutorEntry(raw=f'r-{i}', id=f'id-{i}'))
+    result = store.load_before('id-2', 10)
+    assert result is not None
+    older, has_more = result
+    assert [e.id for e in older] == ['id-0', 'id-1']
+    assert has_more is False
+
+
+def test_load_before_first_entry_returns_empty(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(TutorEntry(raw='r-0', id='id-0'))
+    store.append(TutorEntry(raw='r-1', id='id-1'))
+    result = store.load_before('id-0', 5)
+    assert result is not None
+    older, has_more = result
+    assert older == []
+    assert has_more is False
+
+
+def test_load_before_unknown_returns_none(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(TutorEntry(raw='r', id='id-1'))
+    assert store.load_before('missing', 5) is None
+
+
+def test_load_uses_stat_cache_on_repeated_reads(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(TutorEntry(raw='r', id='id-1'))
+    first = store.load()
+    second = store.load()
+    # Both reads see the same content but the cached path returns a copy,
+    # not the same list — confirm equality not identity.
+    assert [e.id for e in first] == [e.id for e in second]
+    assert first is not second  # load() returns a fresh list each call
+
+
+def test_load_tail_zero_returns_empty(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(TutorEntry(raw='r', id='id-1'))
+    tail, has_more = store.load_tail(0)
+    assert tail == []
+    assert has_more is False
+
+
+def test_load_tail_with_has_more_flag(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    for i in range(5):
+        store.append(TutorEntry(raw=f'r-{i}', id=f'id-{i}'))
+    tail, has_more = store.load_tail(2)
+    assert [e.id for e in tail] == ['id-3', 'id-4']
+    assert has_more is True
+
+
+def test_load_tail_n_exceeds_total_no_more(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(TutorEntry(raw='r', id='only'))
+    tail, has_more = store.load_tail(10)
+    assert [e.id for e in tail] == ['only']
+    assert has_more is False

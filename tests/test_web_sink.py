@@ -181,6 +181,62 @@ def test_render_line_explained_shows_ask_button(tmp_path: Path, jinja_env: Envir
     assert 'meaning' in html
 
 
+async def test_on_explain_chunk_broadcasts_escaped_fragment(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    q = sink.subscribe()
+    sink.on_explain_chunk('e-1', '<b>x</b>')
+    event, fragment = await q.get()
+    assert event == 'explain_chunk'
+    assert 'explain-stream-e-1' in fragment
+    assert '&lt;b&gt;x&lt;/b&gt;' in fragment
+    assert '<b>x</b>' not in fragment
+
+
+async def test_on_explain_aborted_emits_oob_unexplained_variant(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    q = sink.subscribe()
+    entry = TutorEntry(raw='raw', id='aborted-1')
+    sink.on_explain_aborted(entry)
+    event, fragment = await q.get()
+    assert event == 'explain_aborted'
+    assert 'id="line-aborted-1"' in fragment
+    assert 'hx-swap-oob="outerHTML"' in fragment
+    assert 'Explain' in fragment  # reverted to unexplained variant
+
+
+async def test_on_entry_explanation_cleared_emits_oob_unexplained(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    q = sink.subscribe()
+    entry = TutorEntry(raw='raw line', id='cleared-1')
+    sink.on_entry_explanation_cleared(entry)
+    event, fragment = await q.get()
+    assert event == 'entry_explanation_cleared'
+    assert 'id="line-cleared-1"' in fragment
+    assert 'hx-swap-oob="outerHTML"' in fragment
+    assert 'Explain' in fragment
+
+
+async def test_flush_pending_writes_no_outstanding_is_noop(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    # No pending tasks — should return immediately without raising.
+    await sink.flush_pending_writes()
+
+
+async def test_track_explain_clears_when_done(tmp_path: Path, jinja_env: Environment):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+
+    async def quick() -> None:
+        return None
+
+    task = asyncio.create_task(quick())
+    sink.track_explain(task)
+    # Internal state: pending set tracks the task
+    assert task in sink._pending_explains
+    await sink.flush_pending_writes()
+    # Done-callback removes it
+    assert task not in sink._pending_explains
+
+
 # -- subscriber backpressure -------------------------------------------------
 
 

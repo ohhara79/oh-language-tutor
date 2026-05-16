@@ -21,10 +21,14 @@ from tutor.web import (
     DirSession,
     LazyLog,
     WebContext,
+    _close_session,
+    _get_or_create_session,
+    _make_lazy_log,
     _uvicorn_log_config,
     build_app,
     build_template_env,
     list_state_dirs,
+    make_dir_session,
     thread_heading,
 )
 from tutor.web_sink import WebSink
@@ -78,6 +82,18 @@ def test_thread_heading_falls_back_to_anchor_raw():
 def test_thread_heading_user_with_only_whitespace_falls_back():
     meta = _meta(anchor_raw='anchor', messages=[ThreadMessage(role='user', text='   \n\n')])
     assert thread_heading(meta) == 'anchor'
+
+
+def test_thread_heading_skips_non_user_first_message():
+    """Defensive: an assistant-first meta should still find the later user text."""
+    meta = _meta(
+        anchor_raw='anchor',
+        messages=[
+            ThreadMessage(role='assistant', text='greeting from claude'),
+            ThreadMessage(role='user', text='actual user question'),
+        ],
+    )
+    assert thread_heading(meta) == 'actual user question'
 
 
 # -- build_template_env ------------------------------------------------------
@@ -179,6 +195,13 @@ class _FakePool:
 
     async def delete_tutor_entry(self, anchor_id: str) -> None:
         self.deleted_tutor.append(anchor_id)
+
+    async def clear_tutor_entry_explanation(self, anchor_id: str) -> None:
+        self.deleted_tutor.append(f'clear:{anchor_id}')
+
+    async def close_all(self) -> None:
+        self.active.clear()
+        self._active.clear()
 
 
 def _new_fake_pool() -> _FakePool:
@@ -446,6 +469,28 @@ async def test_post_open_thread_legacy_entry_falls_back_to_defaults(tmp_path: Pa
     assert r.status_code == 200
     _tid, _aid, src, tgt, level = pool.opened[0]
     assert (src, tgt, level) == ('English', 'Korean', 'intermediate')
+
+
+async def test_post_open_thread_returns_500_when_pool_emits_no_meta(tmp_path: Path):
+    ctx, pool = _build_ctx(tmp_path)
+
+    async def silent_open(  # type: ignore[no-untyped-def]
+        thread_id: str,
+        anchor_id: str,
+        *,
+        source_language: str,
+        target_language: str,
+        level: str,
+    ) -> None:
+        # Record the open but DON'T register meta — simulates open_thread that
+        # errored internally (e.g., anchor not found in tutor_store).
+        pool.opened.append((thread_id, anchor_id, source_language, target_language, level))
+
+    pool.open_thread = silent_open  # type: ignore[method-assign]
+
+    async with _client(ctx) as client:
+        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
+    assert r.status_code == 500
 
 
 async def test_post_open_thread_unknown_entry_returns_404(tmp_path: Path):
@@ -735,6 +780,260 @@ async def test_lazy_log_creates_file_on_first_write(tmp_path: Path):
     assert (tmp_path / 'tutor.log').exists()
     text = (tmp_path / 'tutor.log').read_text(encoding='utf-8')
     assert text == '=== header ===\nfirst line\n'
+
+
+# -- /partials/older ---------------------------------------------------------
+
+
+async def test_get_partials_older_returns_entries_before_cursor(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    for i in range(5):
+        ctx.writing_session.tutor_store.append(TutorEntry(raw=f'r-{i}', id=f'id-{i}'))
+    async with _client(ctx) as client:
+        r = await client.get('/partials/older', params={'before': 'id-3', 'n': 2})
+    assert r.status_code == 200
+    body = r.text
+    assert 'r-1' in body
+    assert 'r-2' in body
+
+
+async def test_get_partials_older_unknown_cursor_returns_404(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.get('/partials/older', params={'before': 'nope', 'n': 5})
+    assert r.status_code == 404
+
+
+async def test_get_partials_older_without_cookie_returns_400(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.get('/partials/older', params={'before': 'a-1', 'n': 5})
+    assert r.status_code == 400
+
+
+# -- /commands/clear_explanation --------------------------------------------
+
+
+async def test_post_clear_explanation_returns_204_and_calls_pool(tmp_path: Path):
+    ctx, pool = _build_ctx(tmp_path)
+    async with _client(ctx) as client:
+        r = await client.post('/commands/clear_explanation', data={'anchor_id': 'a-1'})
+    assert r.status_code == 204
+    assert pool.deleted_tutor == ['clear:a-1']
+
+
+async def test_post_clear_explanation_without_cookie_returns_400(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='') as client:
+        r = await client.post('/commands/clear_explanation', data={'anchor_id': 'a-1'})
+    assert r.status_code == 400
+
+
+# -- explain with PromptTooLargeError ----------------------------------------
+
+
+async def test_post_explain_oversized_extras_returns_400(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from tutor.prompts import MAX_SYSTEM_PROMPT_BYTES
+
+    ctx, _ = _build_ctx(tmp_path, extras_text='A' * (MAX_SYSTEM_PROMPT_BYTES + 1))
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='target', id='u-pt'))
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-pt', **_AUDIENCE_FORM},
+        )
+    assert r.status_code == 400
+    assert 'execve per-arg cap' in r.text
+
+
+# -- LazyLog edges -----------------------------------------------------------
+
+
+async def test_lazy_log_flush_before_open_is_noop(tmp_path: Path):
+    log = LazyLog(tmp_path / 'tutor.log', '=== header ===\n')
+    log.flush()  # must not error or open the file
+    assert not (tmp_path / 'tutor.log').exists()
+
+
+async def test_lazy_log_flush_after_write_flushes(tmp_path: Path):
+    log = LazyLog(tmp_path / 'tutor.log', '=== header ===\n')
+    log.write('payload\n')
+    log.flush()
+    log.close()
+    assert (tmp_path / 'tutor.log').read_text(encoding='utf-8').endswith('payload\n')
+
+
+async def test_lazy_log_close_before_open_is_noop(tmp_path: Path):
+    log = LazyLog(tmp_path / 'tutor.log', '=== header ===\n')
+    log.close()  # must not error
+    assert not (tmp_path / 'tutor.log').exists()
+
+
+async def test_lazy_log_repeat_writes_reuse_handle(tmp_path: Path):
+    log = LazyLog(tmp_path / 'tutor.log', '=== header ===\n')
+    log.write('one\n')
+    log.write('two\n')
+    log.close()
+    text = (tmp_path / 'tutor.log').read_text(encoding='utf-8')
+    assert text == '=== header ===\none\ntwo\n'
+
+
+# -- get_thread already-active branch ---------------------------------------
+
+
+async def test_get_thread_already_active_skips_reopen(tmp_path: Path):
+    ctx, pool = _build_ctx(tmp_path)
+    pool.threads['t-1'] = _meta(thread_id='t-1', anchor_raw='hi', anchor_id='a-1')
+    pool._active['t-1'] = object()  # mark already-active
+    async with _client(ctx) as client:
+        r = await client.get('/threads/t-1')
+    assert r.status_code == 200
+    assert pool.reopened == []  # short-circuit kept reopen from firing
+
+
+# -- writing_sink_does_not_emit_to_view_dir_subscribers ---------------------
+
+
+# -- make_dir_session / _get_or_create_session ------------------------------
+
+
+def test_make_dir_session_creates_dir_and_wires_components(tmp_path: Path):
+    state_dir = tmp_path / 'fresh'
+    assert not state_dir.exists()
+    args = argparse.Namespace(
+        explain_model='m',
+        ask_model='m',
+        web_host='127.0.0.1',
+        web_port=8000,
+    )
+    env = build_template_env()
+    session = make_dir_session(state_dir, args, env)
+    assert state_dir.exists()
+    assert isinstance(session.log, LazyLog)
+    assert session.state_dir == state_dir
+    # Warming the thread list shouldn't dirty disk on its own.
+    assert not (state_dir / 'tutor.log').exists()
+
+
+def test_get_or_create_session_returns_cached(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    first = _get_or_create_session(ctx, ctx.writing_dir)
+    second = _get_or_create_session(ctx, ctx.writing_dir)
+    assert first is second  # cache hit returns the same DirSession
+
+
+def test_get_or_create_session_creates_new_for_unknown_dir(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    other = tmp_path / 'novel'
+    session = _get_or_create_session(ctx, other)
+    assert session.state_dir == other.resolve()
+    assert other.resolve() in ctx.sessions
+
+
+# -- cookie defenses --------------------------------------------------------
+
+
+async def test_get_tutor_with_dot_prefix_cookie_redirects(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='.hidden') as client:
+        r = await client.get('/tutor', follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers['location'] == '/'
+
+
+async def test_get_tutor_with_slash_cookie_redirects(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    async with _client(ctx, view_dir='a/b') as client:
+        r = await client.get('/tutor', follow_redirects=False)
+    assert r.status_code == 303
+
+
+# -- _make_lazy_log ---------------------------------------------------------
+
+
+def test_make_lazy_log_includes_args_in_header(tmp_path: Path):
+    args = argparse.Namespace(
+        explain_model='ex-model',
+        ask_model='as-model',
+        web_host='1.2.3.4',
+        web_port=9000,
+    )
+    log = _make_lazy_log(tmp_path, args)
+    log.write('first\n')
+    log.close()
+    text = (tmp_path / 'tutor.log').read_text(encoding='utf-8')
+    assert 'explain_model=ex-model' in text
+    assert 'ask_model=as-model' in text
+    assert 'bind=1.2.3.4:9000' in text
+
+
+# -- _close_session ---------------------------------------------------------
+
+
+async def test_close_session_skips_end_banner_when_log_unopened(tmp_path: Path):
+    ctx, pool = _build_ctx(tmp_path)
+    # Throw away any prior writes that the fixture's append() may have produced.
+    log_path = ctx.writing_session.state_dir / 'tutor.log'
+    if log_path.exists():
+        log_path.unlink()
+    # Reset the lazy log so .opened starts False.
+    ctx.writing_session.log = LazyLog(log_path, '=== fresh ===\n')
+    # Replace pool with a minimal-async-compatible stub
+    await _close_session(ctx.writing_session)
+    # Log file should never have been touched.
+    assert not log_path.exists()
+    _ = pool  # suppress unused-var lint
+
+
+async def test_close_session_writes_end_banner_when_log_opened(tmp_path: Path):
+    ctx, _ = _build_ctx(tmp_path)
+    log_path = ctx.writing_session.state_dir / 'tutor.log'
+    # Force-open by writing something first.
+    ctx.writing_session.log.write('mid\n')
+    await _close_session(ctx.writing_session)
+    text = log_path.read_text(encoding='utf-8')
+    assert '=== session end ===' in text
+
+
+# -- events with no initial threads + ping --------------------------------
+
+
+async def test_events_emits_ping_on_idle_then_exits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    # No threads in fake pool, so initial_threads block (418->424) is skipped.
+
+    # Drive the 15.0-second wait_for to TimeoutError immediately so a ping
+    # frame is emitted. The second call sets stop so the loop exits.
+    calls: list[int] = []
+
+    async def fake_wait_for(coro: Any, timeout: float = 0.0) -> tuple[str, str]:  # noqa: ASYNC109
+        _ = timeout
+        coro.close()  # avoid "coroutine was never awaited" warning
+        calls.append(1)
+        if len(calls) >= 2:
+            ctx.stop_event.set()
+        raise TimeoutError
+
+    monkeypatch.setattr('tutor.web.asyncio.wait_for', fake_wait_for)
+
+    async with _client(ctx) as client:
+        r = await client.get('/events')
+    assert r.status_code == 200
+    assert b': ping' in r.content
+    # No initial thread_list frame because pool.list_threads() is empty.
+    assert b'event: thread_list' not in r.content
+
+
+# -- writing_sink_does_not_emit_to_view_dir_subscribers ---------------------
 
 
 async def test_writing_sink_does_not_emit_to_view_dir_subscribers(tmp_path: Path):

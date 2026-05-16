@@ -143,3 +143,13 @@ def test_build_thread_system_prompt_anchor_only_fallback_truncates() -> None:
     prompt = build_thread_system_prompt('English', 'Korean', 'intermediate', anchor, [])
     assert len(prompt.encode('utf-8')) <= MAX_SYSTEM_PROMPT_BYTES
     assert 'anchor' in prompt
+
+
+def test_build_thread_system_prompt_anchor_without_explanation() -> None:
+    anchor = LineRecord(idx=0, raw='ANCHOR RAW', explanation=None)
+    prompt = build_thread_system_prompt('English', 'Korean', 'intermediate', anchor, [])
+    assert '>>> ANCHOR RAW' in prompt
+    # No "[explanation:" trail follows the anchor when explanation is None.
+    anchor_pos = prompt.index('>>> ANCHOR RAW')
+    tail = prompt[anchor_pos : anchor_pos + 200]
+    assert '[explanation:' not in tail
