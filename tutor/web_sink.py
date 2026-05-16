@@ -139,11 +139,13 @@ class WebSink:
         # Replace the streamed span container with a properly-rendered
         # .msg.assistant div. If there's no text (connect failure etc.) emit
         # an empty placeholder so the streamed ghost (if any) is still cleared.
+        # The replacement intentionally does NOT carry id="msg-stream-{thread_id}":
+        # the next turn's send_message_result.html appends a fresh placeholder
+        # with that id, and a duplicate would cause OOB swaps (querySelectorAll)
+        # to hit both elements.
         rendered = render_markdown(last_assistant) if last_assistant else ''
-        fragment = (
-            f'<div id="msg-stream-{html.escape(thread_id)}" '
-            f'class="msg assistant" hx-swap-oob="outerHTML">{rendered}</div>'
-        )
+        target = f'#msg-stream-{html.escape(thread_id)}'
+        fragment = f'<div class="msg assistant" hx-swap-oob="outerHTML:{target}">{rendered}</div>'
         self._broadcast('thread_done', fragment)
 
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:

@@ -336,14 +336,15 @@
 
     // Re-enable the matching thread-compose form when its streamed reply
     // completes or errors. We match by thread_id parsed from the thread_done
-    // payload (id="msg-stream-{thread_id}") so cross-thread navigation doesn't
-    // accidentally re-enable an unrelated form. Focus the textarea after
-    // re-enabling so the user can immediately type the next message.
+    // payload's OOB selector (hx-swap-oob="outerHTML:#msg-stream-{thread_id}")
+    // so cross-thread navigation doesn't accidentally re-enable an unrelated
+    // form. Focus the textarea after re-enabling so the user can immediately
+    // type the next message.
     document.body.addEventListener('htmx:sseBeforeMessage', (evt) => {
         const type = evt.detail && evt.detail.type;
         if (type !== 'thread_done' && type !== 'error') return;
         const data = (evt.detail && evt.detail.data) || '';
-        const match = data.match(/id="msg-stream-([^"]+)"/);
+        const match = data.match(/#msg-stream-([^"\s]+)/);
         const inputs = match
             ? document.querySelectorAll(
                 `form.thread-compose input[name="thread_id"][value="${CSS.escape(match[1])}"]`)
