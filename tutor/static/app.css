@@ -80,9 +80,6 @@ body:not(.view-picker) header {
 }
 .menu-info code { font-size: 0.85rem; }
 
-.picker-sub { margin: 0.25rem 0 0; font-size: 0.85rem; color: #888; }
-.picker-sub code { font-size: 0.85rem; }
-
 .picker-form { margin: 1rem 0; }
 .picker-list { list-style: none; padding: 0; margin: 0 0 1rem; }
 .picker-item { padding: 0.4rem 0; border-bottom: 1px solid #ddd; }
