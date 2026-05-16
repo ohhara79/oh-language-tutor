@@ -782,35 +782,6 @@ async def test_lazy_log_creates_file_on_first_write(tmp_path: Path):
     assert text == '=== header ===\nfirst line\n'
 
 
-# -- /partials/older ---------------------------------------------------------
-
-
-async def test_get_partials_older_returns_entries_before_cursor(tmp_path: Path):
-    ctx, _ = _build_ctx(tmp_path)
-    for i in range(5):
-        ctx.writing_session.tutor_store.append(TutorEntry(raw=f'r-{i}', id=f'id-{i}'))
-    async with _client(ctx) as client:
-        r = await client.get('/partials/older', params={'before': 'id-3', 'n': 2})
-    assert r.status_code == 200
-    body = r.text
-    assert 'r-1' in body
-    assert 'r-2' in body
-
-
-async def test_get_partials_older_unknown_cursor_returns_404(tmp_path: Path):
-    ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx) as client:
-        r = await client.get('/partials/older', params={'before': 'nope', 'n': 5})
-    assert r.status_code == 404
-
-
-async def test_get_partials_older_without_cookie_returns_400(tmp_path: Path):
-    ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
-        r = await client.get('/partials/older', params={'before': 'a-1', 'n': 5})
-    assert r.status_code == 400
-
-
 # -- /commands/clear_explanation --------------------------------------------
 
 

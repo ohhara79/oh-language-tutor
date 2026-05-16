@@ -26,6 +26,17 @@
       <p class="menu-info">Stdin &rarr; <code>{{ writing_dir }}</code></p>
       {% endif %}
       <hr class="menu-sep">
+      <div class="menu-jump">
+        <div class="menu-jump-label">
+          Jump to <span id="jump-current">{{ entries|length }}</span>
+          / <span id="jump-total">{{ entries|length }}</span>
+        </div>
+        <input type="range" id="jump-slider"
+               min="1" max="{{ [entries|length, 1] | max }}" value="{{ [entries|length, 1] | max }}"
+               {% if not entries %}disabled{% endif %}
+               aria-label="Jump to sentence">
+      </div>
+      <hr class="menu-sep">
       <a href="/" class="menu-item">Switch dataset</a>
     </div>
   </header>
@@ -36,15 +47,6 @@
   </div>
 
   <main id="stream-pane" sse-swap="entry_appended" hx-swap="beforeend">
-    <div id="load-older-indicator" class="htmx-indicator" aria-live="polite">Loading older&hellip;</div>
-    {% if has_more %}
-    <div id="load-older-sentinel"
-         hx-get="/partials/older?before={{ oldest_id }}&n={{ page_n }}"
-         hx-trigger="intersect once"
-         hx-swap="outerHTML"
-         hx-indicator="#load-older-indicator"
-         aria-hidden="true"></div>
-    {% endif %}
     {% for entry in entries %}
       {% set raw_escaped = entry.raw | e %}
       {% set explanation_html = render_markdown(entry.explanation) if entry.explanation is not none else '' %}

@@ -50,7 +50,6 @@ if TYPE_CHECKING:
 
 _TEMPLATES_DIR = Path(__file__).parent / 'templates'
 _STATIC_DIR = Path(__file__).parent / 'static'
-_STREAM_PAGE_N = 500
 # Cookie name used to remember which state dir the browser is currently
 # viewing. Set by ``POST /commands/open_state_dir`` and read by every other
 # route that needs to resolve a ``DirSession``.
@@ -368,39 +367,15 @@ def build_app(ctx: WebContext) -> FastAPI:
         session = _resolve_view_session(ctx, request)
         if session is None:
             return RedirectResponse(url='/', status_code=303)
-        entries, has_more = session.tutor_store.load_tail(_STREAM_PAGE_N)
-        oldest_id = entries[0].id if entries else None
+        entries = session.tutor_store.load()
         threads = session.thread_store.list_threads()
         html_body = ctx.env.get_template('index.html').render(
             entries=entries,
-            has_more=has_more,
-            oldest_id=oldest_id,
-            page_n=_STREAM_PAGE_N,
             threads=threads,
             version=ctx.version,
             view_dir=session.state_dir.name,
             writing_dir=ctx.writing_dir.name,
             is_writing_view=session.state_dir == ctx.writing_dir.resolve(),
-        )
-        return HTMLResponse(content=html_body)
-
-    @app.get('/partials/older', response_class=HTMLResponse)
-    async def older(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
-        before: str,
-        n: int = _STREAM_PAGE_N,
-    ) -> HTMLResponse:
-        session = _require_view_session(ctx, request)
-        result = session.tutor_store.load_before(before, n)
-        if result is None:
-            raise HTTPException(status_code=404, detail='cursor not found')
-        older_entries, has_more = result
-        new_oldest_id = older_entries[0].id if older_entries else before
-        html_body = ctx.env.get_template('partials/older_lines.html').render(
-            entries=older_entries,
-            has_more=has_more,
-            oldest_id=new_oldest_id,
-            page_n=n,
         )
         return HTMLResponse(content=html_body)
 

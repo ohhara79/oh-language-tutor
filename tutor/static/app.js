@@ -110,6 +110,38 @@
         applyFilter(on);
     });
 
+    // Hamburger "jump to Nth sentence" slider. Index is 1-based; #1 = oldest,
+    // #N = newest (matches the rendered DOM order in #stream-pane).
+    const jumpSlider = document.getElementById('jump-slider');
+    const jumpCurrent = document.getElementById('jump-current');
+    const jumpTotal = document.getElementById('jump-total');
+    function jumpLines() {
+        return document.getElementById('stream-pane').querySelectorAll('.line');
+    }
+    function jumpRefreshTotal() {
+        const n = jumpLines().length;
+        jumpTotal.textContent = String(n);
+        jumpSlider.max = String(Math.max(n, 1));
+        jumpSlider.disabled = n === 0;
+        if (Number(jumpSlider.value) > n && n > 0) {
+            jumpSlider.value = String(n);
+            jumpCurrent.textContent = String(n);
+        } else if (n === 0) {
+            jumpCurrent.textContent = '0';
+        }
+    }
+    function jumpScrollTo(index) {
+        const lines = jumpLines();
+        if (!lines.length) return;
+        const i = Math.min(Math.max(index, 1), lines.length) - 1;
+        lines[i].scrollIntoView({block: 'start'});
+    }
+    jumpSlider.addEventListener('input', () => {
+        const v = Number(jumpSlider.value);
+        jumpCurrent.textContent = String(v);
+        jumpScrollTo(v);
+    });
+
     function current() { return stack[stack.length - 1]; }
 
     function render() {
@@ -200,10 +232,8 @@
             return;
         }
 
-        if (t.id === 'stream-pane' || t.id === 'load-older-sentinel') {
-            // stream-pane: new line appeared via explanation SSE (beforeend).
-            // load-older-sentinel: auto-load revealed older lines (outerHTML
-            // swap of the sentinel itself). In both cases, newly-inserted
+        if (t.id === 'stream-pane') {
+            // New line appeared via explanation SSE (beforeend). Newly-inserted
             // .line-threads containers may match existing thread items.
             distributeThreads();
             return;
@@ -307,25 +337,11 @@
         window.scrollTo(0, document.body.scrollHeight);
     }).observe(document.getElementById('thread-conversation'), {childList: true, subtree: true});
 
-    // When the load-older sentinel fires, preserve the reader's content
-    // position so the viewport doesn't jump to the newly-prepended older
-    // content. This also pushes the replacement sentinel out of the viewport,
-    // preventing an immediate re-fire cascade.
-    let _loadOlderBefore = null;
-    document.body.addEventListener('htmx:beforeRequest', (evt) => {
-        const t = evt.target;
-        if (!t || t.id !== 'load-older-sentinel') return;
-        _loadOlderBefore = {
-            scrollY: window.scrollY,
-            height: document.documentElement.scrollHeight,
-        };
-    });
-    document.body.addEventListener('htmx:afterSettle', () => {
-        if (_loadOlderBefore === null) return;
-        const delta = document.documentElement.scrollHeight - _loadOlderBefore.height;
-        window.scrollTo(0, _loadOlderBefore.scrollY + delta);
-        _loadOlderBefore = null;
-    });
+    // Keep the jump slider's total in sync with the current line count
+    // (SSE appends new entries; tutor_entry_removed deletes them via OOB).
+    jumpRefreshTotal();
+    new MutationObserver(jumpRefreshTotal).observe(
+        document.getElementById('stream-pane'), {childList: true});
 
     // Auto-dismiss toasts so they don't pile up if many arrive.
     document.body.addEventListener('htmx:oobAfterSwap', (evt) => {

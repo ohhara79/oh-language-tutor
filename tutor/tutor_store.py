@@ -150,27 +150,6 @@ class TutorStore:
                 return i
         return None
 
-    def load_tail(self, n: int) -> tuple[list[TutorEntry], bool]:
-        """Return the last *n* entries plus a ``has_more`` flag."""
-        entries = self.load()
-        if n <= 0 or not entries:
-            return ([], False)
-        tail = entries[-n:]
-        return (tail, len(entries) > n)
-
-    def load_before(self, anchor_id: str, n: int) -> tuple[list[TutorEntry], bool] | None:
-        """Entries immediately older than *anchor_id*, oldest-first.
-
-        Returns ``None`` if *anchor_id* is not present; the caller should
-        translate that to a 404.
-        """
-        entries = self.load()
-        idx = next((i for i, e in enumerate(entries) if e.id == anchor_id), None)
-        if idx is None:
-            return None
-        start = max(0, idx - n)
-        return (entries[start:idx], start > 0)
-
     def _write(self, entries: list[TutorEntry]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = [
