@@ -11,7 +11,7 @@
 <body class="view-list" hx-ext="sse" sse-connect="/events">
   <header>
     <div class="header-row">
-      <span class="view-dir-label" title="{{ view_dir }}">{{ view_dir }}</span>
+      <a class="view-dir-label" href="/?picker=1" title="{{ view_dir }}">{{ view_dir }}</a>
       <button type="button" id="menu-btn" class="btn menu-btn"
               aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel"
               aria-label="Menu">&#9776;</button>
@@ -32,8 +32,6 @@
                {% if not entries %}disabled{% endif %}
                aria-label="Jump to sentence">
       </div>
-      <hr class="menu-sep">
-      <a href="/?picker=1" class="menu-item">Switch dataset</a>
       <hr class="menu-sep">
       <div class="menu-cfg">
         <label class="cfg-field">
