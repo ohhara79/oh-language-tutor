@@ -10,28 +10,55 @@
     const stack = [{view: 'list'}];
     let ignoreNextPopState = false;
 
-    // Audience settings live in localStorage and surface as a single set
-    // of controls inside the header hamburger menu (.menu-cfg). They are
-    // global across all sentences; /commands/open_thread reads the audience
-    // that was frozen on the entry at Explain time, so we only inject these
-    // fields into /commands/explain.
+    // Dataset identity for per-dataset persistence. Reused below by both
+    // audience settings and scroll-position memory. The dataset switcher
+    // triggers a full page reload, so capturing once here is sufficient.
+    const datasetName = (document.querySelector('.view-dir-label')?.textContent || '').trim();
+
+    // Audience settings surface as a single set of controls inside the
+    // header hamburger menu (.menu-cfg). They are persisted per-dataset
+    // under tutor.audienceByDataset (mirrors the tutor.lastAnchors map
+    // shape used for scroll position): { [datasetName]: { key: value } }.
+    // /commands/open_thread reads the audience that was frozen on the
+    // entry at Explain time, so we only inject these fields into
+    // /commands/explain.
     const CFG_DEFAULTS = {
         sourceLanguage: 'English',
         targetLanguage: 'Korean',
         level: 'intermediate',
+        onlyExplained: '0',
     };
     const CFG_FIELDS = [
         {key: 'sourceLanguage', cls: 'cfg-source-language', form: 'source_language'},
         {key: 'targetLanguage', cls: 'cfg-target-language', form: 'target_language'},
         {key: 'level',          cls: 'cfg-level',           form: 'level'},
     ];
-    function cfgStorageKey(key) { return 'tutor.' + key; }
+    const AUDIENCE_KEY = 'tutor.audienceByDataset';
+    function readAudienceMap() {
+        try { return JSON.parse(localStorage.getItem(AUDIENCE_KEY) || '{}'); }
+        catch (e) { return {}; }
+    }
+    function writeAudienceMap(obj) {
+        localStorage.setItem(AUDIENCE_KEY, JSON.stringify(obj));
+    }
+    // Read: per-dataset entry first, then legacy flat key (so existing
+    // users keep their settings on first visit to every dataset), then
+    // the hardcoded default.
     function cfgGet(key) {
-        const raw = localStorage.getItem(cfgStorageKey(key));
-        return raw !== null ? raw : CFG_DEFAULTS[key];
+        if (datasetName) {
+            const entry = readAudienceMap()[datasetName];
+            if (entry && entry[key] !== undefined) return entry[key];
+        }
+        const legacy = localStorage.getItem('tutor.' + key);
+        if (legacy !== null) return legacy;
+        return CFG_DEFAULTS[key];
     }
     function cfgSet(key, value) {
-        localStorage.setItem(cfgStorageKey(key), value);
+        if (!datasetName) return;
+        const map = readAudienceMap();
+        if (!map[datasetName]) map[datasetName] = {};
+        map[datasetName][key] = value;
+        writeAudienceMap(map);
     }
     const menuCfg = document.querySelector('.menu-cfg');
     function cfgHydrateMenu() {
@@ -67,10 +94,10 @@
         evt.detail.parameters = params;
     });
 
-    // Header menu: open/close + "show only explained" filter (persisted in
-    // localStorage). The filter is a pure CSS body-class toggle; hidden lines
+    // Header menu: open/close + "show only explained" filter (persisted
+    // per-dataset alongside the audience settings, see cfgGet/cfgSet
+    // above). The filter is a pure CSS body-class toggle; hidden lines
     // remain in the DOM and respect the same rule when appended via SSE.
-    const FILTER_KEY = 'tutor.onlyExplained';
     const menuBtn = document.getElementById('menu-btn');
     const menuPanel = document.getElementById('menu-panel');
     const filterToggle = document.getElementById('filter-only-explained');
@@ -97,10 +124,10 @@
         body.classList.toggle('filter-only-explained', on);
         filterToggle.checked = on;
     }
-    applyFilter(localStorage.getItem(FILTER_KEY) === '1');
+    applyFilter(cfgGet('onlyExplained') === '1');
     filterToggle.addEventListener('change', () => {
         const on = filterToggle.checked;
-        localStorage.setItem(FILTER_KEY, on ? '1' : '0');
+        cfgSet('onlyExplained', on ? '1' : '0');
         applyFilter(on);
     });
 
@@ -320,8 +347,8 @@
     // per dataset to localStorage so closing/reopening the browser lands
     // the user back where they were. Falls back to "scroll to newest"
     // (the previous default) when no saved anchor exists or the saved
-    // line is no longer rendered (e.g. it was deleted).
-    const datasetName = (document.querySelector('.view-dir-label')?.textContent || '').trim();
+    // line is no longer rendered (e.g. it was deleted). datasetName is
+    // declared near the top of this IIFE alongside audience settings.
     function readLastAnchors() {
         try { return JSON.parse(localStorage.getItem('tutor.lastAnchors') || '{}'); }
         catch (e) { return {}; }
