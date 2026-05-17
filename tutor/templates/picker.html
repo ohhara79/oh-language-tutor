@@ -8,7 +8,15 @@
 </head>
 <body class="view-picker">
   <header>
-    <h1>oh-language-tutor</h1>
+    <div class="header-row">
+      <h1>oh-language-tutor</h1>
+      <button type="button" id="menu-btn" class="btn menu-btn"
+              aria-haspopup="true" aria-expanded="false" aria-controls="menu-panel"
+              aria-label="Menu">&#9776;</button>
+    </div>
+    <div id="menu-panel" class="menu-panel" hidden>
+      <button type="button" id="reset-settings" class="menu-item">Reset settings</button>
+    </div>
   </header>
 
   <main id="picker-pane">
@@ -32,5 +40,7 @@
     <p class="empty">No tutor data directories found.</p>
     {% endif %}
   </main>
+
+  <script src="/static/picker.js?v={{ version }}"></script>
 </body>
 </html>

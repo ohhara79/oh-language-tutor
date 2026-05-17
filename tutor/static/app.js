@@ -131,22 +131,6 @@
         applyFilter(on);
     });
 
-    // "Reset settings": wipe every tutor.* localStorage key (audience map,
-    // last-anchors map, legacy flat keys) and clear the view_state_dir
-    // cookie (path=/ matches how the server sets it in
-    // tutor/web.py:364-370), then reload. With no cookie the server
-    // falls through to the dataset picker.
-    document.getElementById('reset-settings').addEventListener('click', () => {
-        if (!confirm('Reset all settings? This clears audience choices, '
-                + 'scroll position, and the current dataset selection '
-                + 'across all datasets.')) return;
-        Object.keys(localStorage)
-            .filter(k => k.startsWith('tutor.'))
-            .forEach(k => localStorage.removeItem(k));
-        document.cookie = 'view_state_dir=; Max-Age=0; path=/';
-        location.reload();
-    });
-
     // Hamburger "jump to Nth sentence" slider. Index is 1-based; #1 = oldest,
     // #N = newest (matches the rendered DOM order in #stream-pane).
     const jumpSlider = document.getElementById('jump-slider');
