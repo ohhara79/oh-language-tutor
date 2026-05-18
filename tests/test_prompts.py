@@ -44,6 +44,28 @@ def test_build_base_system_prompt_chinese_variant_is_mandatory() -> None:
     assert 'script-identical' not in prompt
 
 
+def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
+    # Python-markdown collapses consecutive label lines into one <p> unless a
+    # blank line separates them. Each non-leading section label must be
+    # preceded by a blank line so it renders as its own paragraph.
+    prompt = build_base_system_prompt('Chinese', 'Korean', 'intermediate')
+    for label in (
+        '\U0001f501 Variant:',
+        '\U0001f4da Vocabulary:',
+        '\U0001f4a1 Expression:',
+        '\U0001f3ac Context:',
+    ):
+        idx = prompt.index(label)
+        # Two newlines immediately precede the two spaces of indentation.
+        assert prompt[idx - 4 : idx - 2] == '\n\n', f'section {label!r} is not preceded by a blank line'
+    # The header still advertises the blank-line rule.
+    assert 'blank line' in prompt
+    # Existing invariants still hold.
+    assert 'ALWAYS include this row when the source is Chinese' in prompt
+    assert 'skip any empty section' in prompt
+    assert 'under 100 words' in prompt
+
+
 def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
     prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
     # Chinese pinyin + IPA, both inside the same parens.
