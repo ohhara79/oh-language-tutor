@@ -169,6 +169,20 @@ def test_build_base_system_prompt_korean_uncertain_vocab_drops_slash() -> None:
     assert 'Sino-Korean but the specific hanja is uncertain' in prompt
 
 
+def test_build_base_system_prompt_forbids_duplicate_dual_script() -> None:
+    # A global backstop rule must forbid emitting `X / X` (identical halves)
+    # for any of the three CJK dual-script vocab formats.
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    assert 'NEVER emit two halves that are character-for-character identical' in prompt
+    # All three dual-script pairings must be named so a future refactor
+    # doesn't silently drop one of them from the rule.
+    assert '新字体 / 旧字体' in prompt
+    assert 'simplified / traditional' in prompt
+    assert 'Hangul / 漢字' in prompt
+    # The action is explicit: drop the slash and the duplicate.
+    assert 'drop the slash and the duplicate' in prompt
+
+
 def test_build_system_prompt_without_extra_equals_base() -> None:
     assert build_system_prompt('English', 'Korean', 'intermediate') == build_base_system_prompt(
         'English',

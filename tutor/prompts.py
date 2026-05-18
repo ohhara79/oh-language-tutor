@@ -113,6 +113,13 @@ def build_base_system_prompt(
         'is uncertain — Hangul is phonetic so IPA in brackets suffices, '
         'e.g. 아름답다 [a̠ɾɯmda̠p̚t͈a̠] → beautiful (native), and '  # noqa: RUF001
         '사기 [sʌːɡi] → fraud (Sino-Korean but hanja unclear from context).\n'  # noqa: RUF001
+        '- Critical for every dual-script vocab item (Japanese 新字体 / '
+        '旧字体, Mandarin simplified / traditional, Korean Hangul / 漢字): '
+        'NEVER emit two halves that are character-for-character identical. '
+        'If the second form would equal the first exactly, drop the slash '
+        'and the duplicate and emit only the single form. This is a hard '
+        'rule that reinforces the per-language "drop the slash" conditions '
+        'above and catches any case they miss.\n'
         '- For source languages whose script is already phonetic\n'
         '  (Spanish, Italian, Indonesian, …), still include the IPA\n'
         '  in brackets, e.g. hola [ˈola] → 안녕.\n'  # noqa: RUF001
