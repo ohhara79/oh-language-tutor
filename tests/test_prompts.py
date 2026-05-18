@@ -36,6 +36,19 @@ def test_build_base_system_prompt_mentions_chinese_variant() -> None:
     assert '学习 / 學習' in prompt
 
 
+def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
+    prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
+    # Chinese pinyin + IPA, both inside the same parens.
+    assert '(xuéxí, [ɕɥěɕǐ])' in prompt
+    # Japanese hiragana + IPA.
+    assert '(うけいれる, [ɯke̞iɾe̞ɾɯ])' in prompt  # noqa: RUF001
+    # Phonetic-script source languages now also carry IPA.
+    assert '[annjʌŋɦasejo]' in prompt
+    # Guard against silent reintroduction of the old "not IPA" carve-outs.
+    assert 'not IPA' not in prompt
+    assert 'omit the bracket' not in prompt
+
+
 def test_build_system_prompt_without_extra_equals_base() -> None:
     assert build_system_prompt('English', 'Korean', 'intermediate') == build_base_system_prompt(
         'English',
