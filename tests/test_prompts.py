@@ -139,6 +139,12 @@ def test_build_base_system_prompt_korean_variant_confidence_rule() -> None:
     # (b) ambiguous homophones — both example pairs are spelled out.
     assert '사기 = 詐欺 / 士氣 / 史記' in prompt
     assert '수도 = 首都 / 水道 / 修道' in prompt
+    # (b) also makes the context-override explicit, with positive examples
+    # so the model isn't overly conservative on context-disambiguated lines.
+    assert 'context CLEARLY selects one sense' in prompt
+    assert '사기를 쳤다 → 詐欺를 쳤다' in prompt
+    assert '대한민국의 수도 → 대한민국의 首都' in prompt
+    assert 'go ahead and convert' in prompt
     # (c) native-vs-Sino-Korean uncertainty.
     assert 'Sino-Korean or native Korean' in prompt
     # (d) rare / literary hanja.
