@@ -164,9 +164,8 @@ body:not(.view-picker) header {
     scroll-margin-top: 4.5rem;
 }
 .line:first-child { border-top: none; }
-.line.has-explanation {
+.line.has-explanation .raw-toggle {
     border-left: 3px solid #0b6bcb;
-    padding-left: 0.5rem;
 }
 
 .raw-toggle {
@@ -407,7 +406,7 @@ body.view-thread #thread-conversation { display: flex; }
     body { background: #1a1a1a; color: #eee; }
     header { border-color: #444; }
     .line { border-color: #333; }
-    .line.has-explanation { border-left-color: #9bf; }
+    .line.has-explanation .raw-toggle { border-left-color: #9bf; }
     .msg.user { color: #6ab0ff; }
     .anchor-raw { color: #bbb; }
     blockquote { color: #bbb; }
