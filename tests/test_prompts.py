@@ -111,8 +111,10 @@ def test_build_base_system_prompt_mentions_korean_hanja_variant() -> None:
 
 def test_build_base_system_prompt_korean_variant_omit_rule() -> None:
     prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
-    # The omission rule must be explicit: drop the row for purely native lines.
-    assert 'no Sino-Korean words' in prompt
+    # The omission rule is now phrased in terms of confidence rather than
+    # the presence of Sino-Korean words: omit only if no word can be
+    # converted confidently.
+    assert 'no word in the line can be converted with confidence' in prompt
     # Native Korean parts must be called out as staying in Hangul.
     assert '고유어' in prompt
     # The "skip any empty section" override still applies to this row.
@@ -125,6 +127,40 @@ def test_build_base_system_prompt_korean_dual_script_vocab_format() -> None:
     assert '학습 / 學習 (haksŭp, [haks͈ɯp])' in prompt  # noqa: RUF001
     # Native Korean vocab format: drops the slash, keeps IPA in brackets.
     assert '아름답다 [a̠ɾɯmda̠p̚t͈a̠]' in prompt  # noqa: RUF001
+
+
+def test_build_base_system_prompt_korean_variant_confidence_rule() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # The confidence gate must be unambiguous.
+    assert 'Convert a word ONLY when you are confident' in prompt
+    # Each of the four documented failure modes must appear explicitly.
+    # (a) proper nouns without pinned context
+    assert 'proper noun' in prompt
+    # (b) ambiguous homophones — both example pairs are spelled out.
+    assert '사기 = 詐欺 / 士氣 / 史記' in prompt
+    assert '수도 = 首都 / 水道 / 修道' in prompt
+    # (c) native-vs-Sino-Korean uncertainty.
+    assert 'Sino-Korean or native Korean' in prompt
+    # (d) rare / literary hanja.
+    assert 'rare or literary' in prompt
+
+
+def test_build_base_system_prompt_korean_partial_conversion_allowed() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # Partial conversion (mixed Hangul / hanja) must be explicitly endorsed.
+    assert 'mixed Hangul / hanja' in prompt
+    assert 'PREFERRED' in prompt
+    # The omit-row threshold is the strict one: nothing can be converted.
+    assert 'Omit the entire row only when no word in the line can be converted' in prompt
+
+
+def test_build_base_system_prompt_korean_uncertain_vocab_drops_slash() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # The pronunciation bullet must document the Hangul-only fallback for
+    # Sino-Korean items whose hanja the model isn't sure about.
+    assert '사기 [sʌːɡi]' in prompt  # noqa: RUF001
+    # The bullet must say uncertain Sino-Korean words drop the slash form.
+    assert 'Sino-Korean but the specific hanja is uncertain' in prompt
 
 
 def test_build_system_prompt_without_extra_equals_base() -> None:
