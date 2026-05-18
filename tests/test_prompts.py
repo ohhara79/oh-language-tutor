@@ -38,10 +38,28 @@ def test_build_base_system_prompt_mentions_chinese_variant() -> None:
 
 def test_build_base_system_prompt_chinese_variant_is_mandatory() -> None:
     prompt = build_base_system_prompt('Chinese', 'Korean', 'intermediate')
-    assert 'ALWAYS include this row when the source is Chinese' in prompt
+    assert 'ALWAYS include when the source is Chinese' in prompt
     # Guard against silent reintroduction of the script-identical carve-out
     # that allowed the model to drop the Variant row on short lines.
     assert 'script-identical' not in prompt
+
+
+def test_build_base_system_prompt_mentions_japanese_kyujitai() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # The Variant row must call out the kyūjitai (旧字体) rewrite for Japanese.
+    assert 'kyūjitai' in prompt
+    assert '旧字体' in prompt
+    # The pronunciation bullet must show the shinjitai/kyūjitai vocab format.
+    assert '学校 / 學校' in prompt
+
+
+def test_build_base_system_prompt_japanese_variant_conditions() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # Both language clauses live on the same Variant row.
+    assert 'ALWAYS include when the source is Chinese' in prompt
+    assert 'source is Japanese' in prompt
+    # The "skip any empty section" override still applies to this row.
+    assert 'does not apply to this row' in prompt
 
 
 def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
@@ -61,7 +79,7 @@ def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
     # The header still advertises the blank-line rule.
     assert 'blank line' in prompt
     # Existing invariants still hold.
-    assert 'ALWAYS include this row when the source is Chinese' in prompt
+    assert 'ALWAYS include when the source is Chinese' in prompt
     assert 'skip any empty section' in prompt
     assert 'under 100 words' in prompt
 
