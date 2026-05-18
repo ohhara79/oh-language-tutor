@@ -135,6 +135,17 @@ _PINNED_ENTRIES: list[tuple[str, str]] = [
     ('掻', '搔'),
     ('剥', '剝'),
     ('遥', '遙'),
+    # Third-pass audit additions (jōyō kanji whose Kangxi form lives at a
+    # distinct Unicode code point; the 2010 jōyō appendix and one
+    # original-jōyō miss surfaced these):
+    ('没', '沒'),
+    ('頬', '頰'),
+    ('餅', '餠'),
+    ('痩', '瘦'),
+    ('嘘', '噓'),
+    ('喩', '喻'),
+    ('填', '塡'),
+    ('挿', '插'),
 ]
 
 
@@ -156,6 +167,15 @@ def test_to_kyujitai_newly_added_entries() -> None:
     # Second-pass audit spot-checks.
     assert to_kyujitai_template('参加') == '參加'
     assert to_kyujitai_template('鴎外') == '鷗外'
+    # Third-pass audit spot-checks.
+    assert to_kyujitai_template('没頭') == '沒頭'
+    assert to_kyujitai_template('頬骨') == '頰骨'
+    assert to_kyujitai_template('煎餅') == '煎餠'
+    assert to_kyujitai_template('痩身') == '瘦身'
+    assert to_kyujitai_template('嘘つき') == '噓つき'
+    assert to_kyujitai_template('比喩') == '比喻'
+    assert to_kyujitai_template('補填') == '補塡'
+    assert to_kyujitai_template('挿入') == '插入'
 
 
 def test_relevant_kyujitai_mappings_filters_by_input() -> None:
