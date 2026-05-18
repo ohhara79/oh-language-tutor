@@ -132,6 +132,55 @@ def test_build_system_prompt_omits_ground_truth_when_unset() -> None:
     assert 'GROUND TRUTH FOR THE TARGET LINE:' not in prompt
 
 
+def test_build_system_prompt_appends_kyujitai_mappings_bullet() -> None:
+    prompt = build_system_prompt(
+        'Japanese',
+        'Korean',
+        'intermediate',
+        kyujitai_mappings={'学': ['學'], '弁': ['辨', '瓣', '辯', '辮']},
+    )
+    assert 'GROUND TRUTH FOR THE TARGET LINE:' in prompt
+    assert 'Per-kanji kyūjitai mappings' in prompt
+    # Single-candidate entry renders as plain arrow.
+    assert '学 → 學' in prompt
+    # Multi-candidate entry renders alternatives + the "pick by meaning" hint.
+    assert '弁 → 辨 / 瓣 / 辯 / 辮' in prompt
+    assert 'pick by meaning' in prompt
+
+
+def test_build_system_prompt_omits_mappings_bullet_when_empty() -> None:
+    prompt_none = build_system_prompt('Japanese', 'Korean', 'intermediate')
+    prompt_empty = build_system_prompt(
+        'Japanese',
+        'Korean',
+        'intermediate',
+        kyujitai_mappings={},
+    )
+    for prompt in (prompt_none, prompt_empty):
+        assert 'Per-kanji kyūjitai mappings' not in prompt
+
+
+def test_build_system_prompt_combines_variant_and_mappings() -> None:
+    prompt = build_system_prompt(
+        'Japanese',
+        'Korean',
+        'intermediate',
+        kyujitai_variant='[辨|瓣|辯|辮]護士',
+        kyujitai_mappings={'弁': ['辨', '瓣', '辯', '辮']},
+    )
+    # Both bullets live under a single GROUND TRUTH header.
+    assert prompt.count('GROUND TRUTH FOR THE TARGET LINE:') == 1
+    assert '[辨|瓣|辯|辮]護士' in prompt
+    assert 'Per-kanji kyūjitai mappings' in prompt
+
+
+def test_build_base_system_prompt_japanese_vocab_rule_references_ground_truth() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # The Japanese pronunciation bullet must direct the model to use the
+    # GROUND TRUTH mappings as the source of truth for kyūjitai forms.
+    assert 'GROUND TRUTH mappings' in prompt
+
+
 def test_build_base_system_prompt_japanese_variant_references_ground_truth() -> None:
     prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
     # The Variant row must point the model at the GROUND TRUTH block and

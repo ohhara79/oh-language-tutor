@@ -700,6 +700,9 @@ async def test_post_explain_japanese_injects_kyujitai_ground_truth(
     assert 'GROUND TRUTH FOR THE TARGET LINE:' in opts.system_prompt
     # The unambiguous chars are pre-substituted, the ambiguous one becomes a bracket group.
     assert '[辨|瓣|辯|辮]護士' in opts.system_prompt
+    # Per-kanji mappings for vocab — 弁 is the only mapped kanji in 弁護士.
+    assert 'Per-kanji kyūjitai mappings' in opts.system_prompt
+    assert '弁 → 辨 / 瓣 / 辯 / 辮' in opts.system_prompt
 
 
 async def test_post_explain_non_japanese_omits_kyujitai_ground_truth(

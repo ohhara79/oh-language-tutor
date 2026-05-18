@@ -70,11 +70,13 @@ def build_base_system_prompt(
         '  (English, French, Russian, Arabic, Thai, …), IPA alone suffices,\n'
         '  e.g. accept [əkˈsɛpt] → 받아들이다.\n'  # noqa: RUF001 — U+02C8 is the IPA primary-stress mark
         '- For Japanese, show both forms separated by " / " (shinjitai first, '
-        'kyūjitai second) when any kanji in the word has a kyūjitai variant, '
-        'with hiragana and IPA in the same parens, comma-separated, e.g. '
-        '学校 / 學校 (がっこう, [ɡakkoː]) → 학교.\n'  # noqa: RUF001 — IPA script-g and length mark
+        'kyūjitai second) when any kanji in the word has a kyūjitai variant '
+        'per the GROUND TRUTH mappings below — those mappings are the source '
+        'of truth, not your recall. Hiragana and IPA go in the same parens, '
+        'comma-separated, e.g. 学校 / 學校 (がっこう, [ɡakkoː]) → 학교.\n'  # noqa: RUF001 — IPA script-g and length mark
         '  Drop the slash and second form when no kanji in the word has a '
-        'kyūjitai variant, e.g. 受け入れる (うけいれる, [ɯke̞iɾe̞ɾɯ]) → 받아들이다.\n'  # noqa: RUF001
+        'kyūjitai variant per the GROUND TRUTH mappings, e.g. 受け入れる '
+        '(うけいれる, [ɯke̞iɾe̞ɾɯ]) → 받아들이다.\n'  # noqa: RUF001
         '- For Mandarin Chinese, show both scripts separated by " / " '
         '(raw-script first), with pinyin and IPA in the same parens,\n'
         '  comma-separated, e.g. 学习 / 學習 (xuéxí, [ɕɥěɕǐ]) → 학습.\n'
@@ -108,6 +110,18 @@ def read_extras_system_prompt(path: str) -> str:
         raise SystemExit(msg) from exc
 
 
+def _render_kyujitai_mappings(mappings: dict[str, list[str]]) -> str:
+    """Render per-kanji kyūjitai mappings as indented prompt lines."""
+    lines: list[str] = []
+    for shinjitai, kyujitai_forms in mappings.items():
+        if len(kyujitai_forms) == 1:
+            lines.append(f'      {shinjitai} → {kyujitai_forms[0]}')
+        else:
+            joined = ' / '.join(kyujitai_forms)
+            lines.append(f'      {shinjitai} → {joined}  (pick by meaning)')
+    return '\n'.join(lines)
+
+
 def build_system_prompt(
     source_language: str,
     target_language: str,
@@ -115,12 +129,16 @@ def build_system_prompt(
     extras_text: str | None = None,
     *,
     kyujitai_variant: str | None = None,
+    kyujitai_mappings: dict[str, list[str]] | None = None,
 ) -> str:
     """Build the explain system prompt for one request.
 
     *kyujitai_variant*, when supplied, is the precomputed kyūjitai rewrite
-    of the target line. It is injected as a GROUND TRUTH block so the
-    Variant row no longer relies on the model's kyūjitai recall.
+    of the target line. *kyujitai_mappings*, when non-empty, is the
+    per-kanji subset of the lookup table for the target line — it's
+    consulted by the LLM when emitting dual-script Vocabulary items.
+    Both are injected as bullets in a single GROUND TRUTH block so the
+    Variant row and Vocabulary share the same source of truth.
 
     Raises :class:`PromptTooLargeError` if the result exceeds the SDK's
     execve per-arg cap.
@@ -128,9 +146,10 @@ def build_system_prompt(
     result = build_base_system_prompt(source_language, target_language, level)
     if extras_text:
         result += '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extras_text
+    if kyujitai_variant is not None or kyujitai_mappings:
+        result += '\n\nGROUND TRUTH FOR THE TARGET LINE:\n'
     if kyujitai_variant is not None:
         result += (
-            '\n\nGROUND TRUTH FOR THE TARGET LINE:\n'
             '- Kyūjitai (旧字体) rewrite of the target line:\n'
             f'    {kyujitai_variant}\n'
             '  Use this string in the \U0001f501 Variant row. Where you see '
@@ -140,6 +159,14 @@ def build_system_prompt(
             'context. Do not substitute or invent kanji forms outside what '
             'the brackets list. Where no brackets appear, copy the '
             'character verbatim.\n'
+        )
+    if kyujitai_mappings:
+        result += (
+            '- Per-kanji kyūjitai mappings for the target line — use these '
+            'when emitting Vocabulary items containing any of these kanji, '
+            'applying the same "[A|B|C] = pick by meaning" rule as the '
+            'Variant row:\n'
+            f'{_render_kyujitai_mappings(kyujitai_mappings)}\n'
         )
     size = len(result.encode('utf-8'))
     if size > MAX_SYSTEM_PROMPT_BYTES:

@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from tutor.core import stdin_loop
-from tutor.japanese import is_japanese, to_kyujitai_template
+from tutor.japanese import is_japanese, relevant_kyujitai_mappings, to_kyujitai_template
 from tutor.markdown_util import render_markdown
 from tutor.prompts import (
     EXPLAIN_CONTEXT_K,
@@ -549,7 +549,12 @@ def build_app(ctx: WebContext) -> FastAPI:
         target = entries[idx]
         if target.explanation is not None:
             return HTMLResponse(content=session.sink.render_line(target, active=True))
-        kyujitai_variant = to_kyujitai_template(target.raw) if is_japanese(source_language) else None
+        if is_japanese(source_language):
+            kyujitai_variant = to_kyujitai_template(target.raw)
+            kyujitai_mappings = relevant_kyujitai_mappings(target.raw)
+        else:
+            kyujitai_variant = None
+            kyujitai_mappings = None
         try:
             system_prompt = build_system_prompt(
                 source_language,
@@ -557,6 +562,7 @@ def build_app(ctx: WebContext) -> FastAPI:
                 level,
                 ctx.extras_text,
                 kyujitai_variant=kyujitai_variant,
+                kyujitai_mappings=kyujitai_mappings,
             )
         except PromptTooLargeError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

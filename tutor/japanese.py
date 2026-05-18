@@ -46,3 +46,20 @@ def to_kyujitai_template(text: str) -> str | None:
             out.append('[' + '|'.join(forms) + ']')
             changed = True
     return ''.join(out) if changed else None
+
+
+def relevant_kyujitai_mappings(text: str) -> dict[str, list[str]]:
+    """Return the subset of the lookup table whose keys appear in *text*.
+
+    The result is keyed by the shinjitai character (deduplicated) and ordered
+    by first appearance in *text*, so the rendered list is stable per line.
+    Returns an empty dict when no character in *text* has a kyūjitai mapping.
+    """
+    out: dict[str, list[str]] = {}
+    for ch in text:
+        if ch in out:
+            continue
+        forms = _TABLE.get(ch)
+        if forms is not None:
+            out[ch] = forms
+    return out
