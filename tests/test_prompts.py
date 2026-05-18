@@ -36,6 +36,14 @@ def test_build_base_system_prompt_mentions_chinese_variant() -> None:
     assert '学习 / 學習' in prompt
 
 
+def test_build_base_system_prompt_chinese_variant_is_mandatory() -> None:
+    prompt = build_base_system_prompt('Chinese', 'Korean', 'intermediate')
+    assert 'ALWAYS include this row when the source is Chinese' in prompt
+    # Guard against silent reintroduction of the script-identical carve-out
+    # that allowed the model to drop the Variant row on short lines.
+    assert 'script-identical' not in prompt
+
+
 def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
     prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
     # Chinese pinyin + IPA, both inside the same parens.
