@@ -665,6 +665,67 @@ async def test_post_explain_happy_path(
     assert 'intermediate' in opts.system_prompt
 
 
+async def test_post_explain_japanese_injects_kyujitai_ground_truth(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    # 弁護士 carries an ambiguous shinjitai (弁 → 辨|瓣|辯|辮) plus two
+    # unmapped kanji; the converter must emit a bracketed template.
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='弁護士', id='u-jp'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient(
+            [
+                [
+                    make_text_delta('the '),
+                    make_text_delta('explanation'),
+                    make_assistant('the explanation'),
+                    make_result('sid'),
+                ]
+            ]
+        ),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-jp', **_AUDIENCE_FORM, 'source_language': 'Japanese'},
+        )
+        assert r.status_code == 200
+        await ctx.writing_session.sink.flush_pending_writes()
+
+    [opts] = fake_client_factory.option_calls
+    assert 'GROUND TRUTH FOR THE TARGET LINE:' in opts.system_prompt
+    # The unambiguous chars are pre-substituted, the ambiguous one becomes a bracket group.
+    assert '[辨|瓣|辯|辮]護士' in opts.system_prompt
+
+
+async def test_post_explain_non_japanese_omits_kyujitai_ground_truth(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='学校', id='u-ko'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient([[make_assistant('explanation'), make_result('sid')]]),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post(
+            '/commands/explain',
+            data={'entry_id': 'u-ko', **_AUDIENCE_FORM, 'source_language': 'Korean'},
+        )
+        assert r.status_code == 200
+        await ctx.writing_session.sink.flush_pending_writes()
+
+    [opts] = fake_client_factory.option_calls
+    assert 'GROUND TRUTH FOR THE TARGET LINE:' not in opts.system_prompt
+
+
 async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
     tmp_path: Path,
     fake_client_factory: FakeClaudeSDKClientFactory,

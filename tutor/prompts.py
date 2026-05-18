@@ -46,11 +46,14 @@ def build_base_system_prompt(
         '  \U0001f501 Variant:     <raw line rewritten in the script variant '
         'for the source language. For Chinese: the other script (simplified ↔ '
         'traditional) — ALWAYS include when the source is Chinese, even if '
-        'most characters coincide. For Japanese: the same line with every '
-        'kanji that has a kyūjitai (旧字体) form rewritten in kyūjitai — '
-        'include whenever the source is Japanese and the line contains at '
-        'least one such kanji. The "skip any empty section" rule does not '
-        'apply to this row. Omit ONLY when neither condition holds.>\n'
+        'most characters coincide. For Japanese: copy the kyūjitai (旧字体) '
+        'rewrite from the GROUND TRUTH block below verbatim, resolving any '
+        '[A|B|C] group by picking the one form whose meaning fits the line '
+        'in context (no brackets, no pipes in the final output). When no '
+        'GROUND TRUTH block is supplied, the source is Japanese but the line '
+        'has no convertible kanji — omit the row. The "skip any empty '
+        'section" rule does not apply to this row. Omit ONLY when neither '
+        'condition holds.>\n'
         '\n'
         f'  \U0001f4da Vocabulary: <2-3 items, {source_language} word [pronunciation] → {target_language}>\n'
         '\n'
@@ -110,14 +113,34 @@ def build_system_prompt(
     target_language: str,
     level: str,
     extras_text: str | None = None,
+    *,
+    kyujitai_variant: str | None = None,
 ) -> str:
     """Build the explain system prompt for one request.
+
+    *kyujitai_variant*, when supplied, is the precomputed kyūjitai rewrite
+    of the target line. It is injected as a GROUND TRUTH block so the
+    Variant row no longer relies on the model's kyūjitai recall.
 
     Raises :class:`PromptTooLargeError` if the result exceeds the SDK's
     execve per-arg cap.
     """
-    base = build_base_system_prompt(source_language, target_language, level)
-    result = base + '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extras_text if extras_text else base
+    result = build_base_system_prompt(source_language, target_language, level)
+    if extras_text:
+        result += '\n\nADDITIONAL SOURCE-SPECIFIC CONTEXT:\n\n' + extras_text
+    if kyujitai_variant is not None:
+        result += (
+            '\n\nGROUND TRUTH FOR THE TARGET LINE:\n'
+            '- Kyūjitai (旧字体) rewrite of the target line:\n'
+            f'    {kyujitai_variant}\n'
+            '  Use this string in the \U0001f501 Variant row. Where you see '
+            '"[A|B|C]", that position has multiple kyūjitai forms whose '
+            'choice depends on meaning — pick exactly one form (no '
+            'brackets, no pipes) using the meaning of the target line in '
+            'context. Do not substitute or invent kanji forms outside what '
+            'the brackets list. Where no brackets appear, copy the '
+            'character verbatim.\n'
+        )
     size = len(result.encode('utf-8'))
     if size > MAX_SYSTEM_PROMPT_BYTES:
         msg = (

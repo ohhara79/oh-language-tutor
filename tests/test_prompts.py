@@ -114,6 +114,32 @@ def test_build_system_prompt_appends_extra_text() -> None:
     assert prompt.index(marker) < prompt.index(extra_text)
 
 
+def test_build_system_prompt_appends_kyujitai_ground_truth() -> None:
+    prompt = build_system_prompt(
+        'Japanese',
+        'Korean',
+        'intermediate',
+        kyujitai_variant='[辨|瓣|辯|辮]護士',
+    )
+    assert 'GROUND TRUTH FOR THE TARGET LINE:' in prompt
+    assert '[辨|瓣|辯|辮]護士' in prompt
+    # The block must teach the bracket-resolution rule.
+    assert 'pick exactly one form' in prompt
+
+
+def test_build_system_prompt_omits_ground_truth_when_unset() -> None:
+    prompt = build_system_prompt('Japanese', 'Korean', 'intermediate')
+    assert 'GROUND TRUTH FOR THE TARGET LINE:' not in prompt
+
+
+def test_build_base_system_prompt_japanese_variant_references_ground_truth() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # The Variant row must point the model at the GROUND TRUTH block and
+    # teach the bracket convention.
+    assert 'GROUND TRUTH block' in prompt
+    assert '[A|B|C]' in prompt
+
+
 def test_build_system_prompt_oversized_extras_raises() -> None:
     huge = 'A' * (MAX_SYSTEM_PROMPT_BYTES + 1)
     with pytest.raises(PromptTooLargeError) as excinfo:
