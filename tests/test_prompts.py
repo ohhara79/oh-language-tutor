@@ -90,11 +90,41 @@ def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
     assert '(xuéxí, [ɕɥěɕǐ])' in prompt
     # Japanese hiragana + IPA.
     assert '(うけいれる, [ɯke̞iɾe̞ɾɯ])' in prompt  # noqa: RUF001
-    # Phonetic-script source languages now also carry IPA.
-    assert '[annjʌŋɦasejo]' in prompt
+    # Korean Sino-Korean dual-script item: romanization + IPA in parens.
+    assert '(haksŭp, [haks͈ɯp])' in prompt  # noqa: RUF001
+    # Phonetic-script catch-all carries IPA in brackets.
+    assert '[ˈola]' in prompt  # noqa: RUF001 — IPA primary-stress mark
     # Guard against silent reintroduction of the old "not IPA" carve-outs.
     assert 'not IPA' not in prompt
     assert 'omit the bracket' not in prompt
+
+
+def test_build_base_system_prompt_mentions_korean_hanja_variant() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # The Variant row must call out the hanja (漢字) rewrite for Korean.
+    assert 'hanja' in prompt
+    assert '漢字' in prompt
+    assert '漢字語' in prompt
+    # The pronunciation bullet must show the Hangul/hanja dual-script vocab format.
+    assert '학습 / 學習' in prompt
+
+
+def test_build_base_system_prompt_korean_variant_omit_rule() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # The omission rule must be explicit: drop the row for purely native lines.
+    assert 'no Sino-Korean words' in prompt
+    # Native Korean parts must be called out as staying in Hangul.
+    assert '고유어' in prompt
+    # The "skip any empty section" override still applies to this row.
+    assert 'does not apply to this row' in prompt
+
+
+def test_build_base_system_prompt_korean_dual_script_vocab_format() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # Sino-Korean vocab format: 한글 / 漢字 (romanization, [IPA]) → translation.
+    assert '학습 / 學習 (haksŭp, [haks͈ɯp])' in prompt  # noqa: RUF001
+    # Native Korean vocab format: drops the slash, keeps IPA in brackets.
+    assert '아름답다 [a̠ɾɯmda̠p̚t͈a̠]' in prompt  # noqa: RUF001
 
 
 def test_build_system_prompt_without_extra_equals_base() -> None:
