@@ -7,6 +7,7 @@ import asyncio
 import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -293,7 +294,7 @@ def _client(ctx: WebContext, *, view_dir: str | None = None) -> httpx.AsyncClien
     cookies: dict[str, str] = {}
     name = ctx.writing_dir.name if view_dir is None else view_dir
     if name:
-        cookies[VIEW_COOKIE] = name
+        cookies[VIEW_COOKIE] = quote(name, safe='')
     return httpx.AsyncClient(transport=transport, base_url='http://test', cookies=cookies)
 
 
@@ -331,6 +332,28 @@ async def test_post_open_state_dir_sets_cookie_and_redirects(tmp_path: Path):
     assert r.status_code == 303
     assert r.headers['location'] == '/tutor'
     assert r.cookies.get(VIEW_COOKIE) == 'other'
+
+
+async def test_post_open_state_dir_supports_non_ascii_name(tmp_path: Path):
+    # Regression: state-dir names with non-ASCII characters (e.g. Chinese)
+    # used to crash set_cookie with a latin-1 encode error. The cookie is now
+    # percent-encoded on the wire and decoded on read, so the round-trip
+    # resolves to the right session.
+    ctx, _ = _build_ctx(tmp_path)
+    cjk_name = '老友记.S01E01'
+    (tmp_path / cjk_name).mkdir()
+    async with _client(ctx, view_dir='') as client:
+        r = await client.post(
+            '/commands/open_state_dir',
+            data={'dir_name': cjk_name},
+        )
+        assert r.status_code == 303
+        assert r.headers['location'] == '/tutor'
+        # Follow the redirect on the same client so the freshly-set cookie
+        # is sent back — the index should resolve to the CJK-named dir.
+        r2 = await client.get('/tutor')
+    assert r2.status_code == 200
+    assert cjk_name in r2.text
 
 
 async def test_post_open_state_dir_rejects_unknown_dir(tmp_path: Path):

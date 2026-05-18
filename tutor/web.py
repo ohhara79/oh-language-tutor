@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, override
+from urllib.parse import quote, unquote
 
 import uvicorn
 from claude_agent_sdk import (
@@ -54,6 +55,11 @@ _STATIC_DIR = Path(__file__).parent / 'static'
 # viewing. Set by ``POST /commands/open_state_dir`` and read by every other
 # route that needs to resolve a ``DirSession``.
 VIEW_COOKIE = 'view_state_dir'
+
+
+def _read_view_cookie(request: Request) -> str | None:
+    raw = request.cookies.get(VIEW_COOKIE)
+    return unquote(raw) if raw else None
 
 
 class LazyLog(io.TextIOBase):
@@ -250,7 +256,7 @@ def _resolve_view_session(ctx: WebContext, request: Request) -> DirSession | Non
     Defends against path traversal: the cookie value must be a plain basename
     matching a real direct subdir of ``ctx.discovery_parent``.
     """
-    cookie_val = request.cookies.get(VIEW_COOKIE)
+    cookie_val = _read_view_cookie(request)
     if not cookie_val:
         return None
     if '/' in cookie_val or '\\' in cookie_val or cookie_val.startswith('.'):
@@ -344,7 +350,7 @@ def build_app(ctx: WebContext) -> FastAPI:
         if request.query_params.get('picker') != '1' and _resolve_view_session(ctx, request) is not None:
             return RedirectResponse(url='/tutor', status_code=303)
         dirs = list_state_dirs(ctx.discovery_parent)
-        current = request.cookies.get(VIEW_COOKIE) or ctx.writing_dir.name
+        current = _read_view_cookie(request) or ctx.writing_dir.name
         html_body = ctx.env.get_template('picker.html').render(
             dirs=[d.name for d in dirs],
             writing_dir=ctx.writing_dir.name,
@@ -363,7 +369,7 @@ def build_app(ctx: WebContext) -> FastAPI:
         response = RedirectResponse(url='/tutor', status_code=303)
         response.set_cookie(
             VIEW_COOKIE,
-            dir_name,
+            quote(dir_name, safe=''),
             samesite='lax',
             httponly=False,
             max_age=365 * 24 * 3600,
