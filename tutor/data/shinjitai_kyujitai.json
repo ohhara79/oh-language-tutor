@@ -1,5 +1,5 @@
 {
-  "_notes": "Shinjitai (新字体) -> kyūjitai (旧字体) mapping derived from the 1949 Tōyō and post-1981 Jōyō simplifications. Keys are single shinjitai code points; values are lists of candidate kyūjitai forms. A one-element list is an unambiguous rewrite. A multi-element list flags a shinjitai whose correct kyūjitai depends on meaning (e.g. 弁 → 辨/瓣/辯/辮: 弁護士=辯, 弁当=辨, 花弁=瓣, 弁髪=辮; 画 → 畫/劃: 絵画=畫, 区画=劃). The downstream caller emits '[A|B|C]' for multi-entry positions and asks the LLM to resolve by context. For shinjitai with a valid bare-classical sense identical to the shinjitai (余 'I', 缶 'jar', 芸 'rue'), only the modern simplification target is listed; the classical sense is rare in modern subtitles and is accepted as a known limitation. Characters whose shinjitai equals their kyūjitai are deliberately absent — the converter leaves unmapped characters verbatim. The table is curated and intentionally extensible: a regression test in tests/test_japanese.py pins the well-attested common entries so future edits cannot silently drop them; new entries can be added by appending to this object.",
+  "_notes": "Shinjitai (新字体) -> kyūjitai (旧字体) mapping derived from the 1949 Tōyō, post-1981 Jōyō, and selected 2000 表外漢字字体表 (hyōgai-kanji-jitaihyō) 簡易慣用字体 simplifications. Keys are single shinjitai code points; values are lists of candidate kyūjitai forms. A one-element list is an unambiguous rewrite. A multi-element list flags a shinjitai whose correct kyūjitai depends on meaning (e.g. 弁 → 辨/瓣/辯/辮: 弁護士=辯, 弁当=辨, 花弁=瓣, 弁髪=辮; 画 → 畫/劃: 絵画=畫, 区画=劃). The downstream caller emits '[A|B|C]' for multi-entry positions and asks the LLM to resolve by context. For shinjitai with a valid bare-classical sense identical to the shinjitai (余 'I', 缶 'jar', 芸 'rue'), only the modern simplification target is listed; the classical sense is rare in modern subtitles and is accepted as a known limitation. Characters whose shinjitai equals their kyūjitai are deliberately absent — the converter leaves unmapped characters verbatim. The table is curated and intentionally extensible: a regression test in tests/test_japanese.py pins the well-attested common entries so future edits cannot silently drop them; new entries can be added by appending to this object.",
   "万": [
     "萬"
   ],
@@ -51,6 +51,9 @@
   "余": [
     "餘"
   ],
+  "侠": [
+    "俠"
+  ],
   "価": [
     "價"
   ],
@@ -74,6 +77,9 @@
   ],
   "写": [
     "寫"
+  ],
+  "凛": [
+    "凜"
   ],
   "処": [
     "處"
@@ -147,6 +153,9 @@
   "唇": [
     "脣"
   ],
+  "唖": [
+    "啞"
+  ],
   "喩": [
     "喻"
   ],
@@ -158,6 +167,9 @@
   ],
   "嘱": [
     "囑"
+  ],
+  "噛": [
+    "嚙"
   ],
   "団": [
     "團"
@@ -303,6 +315,9 @@
   "弐": [
     "貳"
   ],
+  "弯": [
+    "彎"
+  ],
   "弾": [
     "彈"
   ],
@@ -405,6 +420,9 @@
   "撃": [
     "擊"
   ],
+  "撹": [
+    "攪"
+  ],
   "数": [
     "數"
   ],
@@ -455,6 +473,9 @@
   ],
   "桜": [
     "櫻"
+  ],
+  "桧": [
+    "檜"
   ],
   "検": [
     "檢"
@@ -573,6 +594,9 @@
   "点": [
     "點"
   ],
+  "焔": [
+    "焰"
+  ],
   "為": [
     "爲"
   ],
@@ -634,6 +658,9 @@
   "砕": [
     "碎"
   ],
+  "砿": [
+    "礦"
+  ],
   "礼": [
     "禮"
   ],
@@ -666,6 +693,9 @@
   ],
   "竜": [
     "龍"
+  ],
+  "篭": [
+    "籠"
   ],
   "粋": [
     "粹"
@@ -712,6 +742,9 @@
   "繊": [
     "纖"
   ],
+  "繍": [
+    "繡"
+  ],
   "缶": [
     "罐"
   ],
@@ -751,6 +784,9 @@
   "蔵": [
     "藏"
   ],
+  "蕊": [
+    "蘂"
+  ],
   "薫": [
     "薰"
   ],
@@ -774,6 +810,9 @@
   ],
   "蝉": [
     "蟬"
+  ],
+  "蝋": [
+    "蠟"
   ],
   "衛": [
     "衞"
@@ -811,6 +850,9 @@
   "説": [
     "說"
   ],
+  "諌": [
+    "諫"
+  ],
   "読": [
     "讀"
   ],
@@ -834,6 +876,9 @@
   ],
   "踊": [
     "踴"
+  ],
+  "躯": [
+    "軀"
   ],
   "転": [
     "轉"
@@ -861,6 +906,9 @@
   ],
   "酔": [
     "醉"
+  ],
+  "醤": [
+    "醬"
   ],
   "醗": [
     "醱"
@@ -952,6 +1000,9 @@
   "騒": [
     "騷"
   ],
+  "騨": [
+    "驒"
+  ],
   "験": [
     "驗"
   ],
@@ -973,8 +1024,14 @@
   "鶏": [
     "雞"
   ],
+  "鹸": [
+    "鹼"
+  ],
   "麦": [
     "麥"
+  ],
+  "麹": [
+    "麴"
   ],
   "麺": [
     "麵"

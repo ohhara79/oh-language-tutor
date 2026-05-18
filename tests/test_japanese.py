@@ -146,6 +146,27 @@ _PINNED_ENTRIES: list[tuple[str, str]] = [
     ('喩', '喻'),
     ('填', '塡'),
     ('挿', '插'),
+    # Fourth-pass audit additions (hyōgai 表外漢字字体表 簡易慣用字体 and
+    # two non-list jinmeiyō/jōyō-adjacent pairs common in subtitles):
+    ('唖', '啞'),
+    ('焔', '焰'),
+    ('噛', '嚙'),
+    ('侠', '俠'),
+    ('躯', '軀'),
+    ('鹸', '鹼'),
+    ('麹', '麴'),
+    ('桧', '檜'),
+    ('醤', '醬'),
+    ('蝋', '蠟'),
+    ('砿', '礦'),
+    ('蕊', '蘂'),
+    ('騨', '驒'),
+    ('弯', '彎'),
+    ('繍', '繡'),
+    ('撹', '攪'),
+    ('諌', '諫'),
+    ('凛', '凜'),
+    ('篭', '籠'),
 ]
 
 
@@ -176,6 +197,16 @@ def test_to_kyujitai_newly_added_entries() -> None:
     assert to_kyujitai_template('比喩') == '比喻'
     assert to_kyujitai_template('補填') == '補塡'
     assert to_kyujitai_template('挿入') == '插入'
+    # Fourth-pass audit spot-checks (hyōgai 表外漢字字体表 additions).
+    assert to_kyujitai_template('蝋燭') == '蠟燭'
+    assert to_kyujitai_template('石鹸') == '石鹼'
+    assert to_kyujitai_template('飛騨') == '飛驒'
+    assert to_kyujitai_template('刺繍') == '刺繡'
+    assert to_kyujitai_template('醤油') == '醬油'
+    assert to_kyujitai_template('撹拌') == '攪拌'
+    assert to_kyujitai_template('任侠') == '任俠'
+    # 台 maps to 臺 elsewhere in the table, so the whole phrase rewrites.
+    assert to_kyujitai_template('桧舞台') == '檜舞臺'
 
 
 def test_relevant_kyujitai_mappings_filters_by_input() -> None:
