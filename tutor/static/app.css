@@ -184,6 +184,8 @@ body:not(.view-picker) header {
     white-space: pre-wrap;
     word-break: break-word;
     min-height: 44px;
+    -webkit-user-select: text;
+    user-select: text;
 }
 .raw-toggle:hover { background: rgba(128, 128, 128, 0.08); }
 .raw-toggle:focus-visible { outline: 2px solid #8ab; outline-offset: -2px; }

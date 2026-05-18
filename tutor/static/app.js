@@ -237,11 +237,46 @@
 
     // Tap a raw-line toggle in list view -> inline-expand that line's detail.
     // Clicking a different line collapses the previous one; clicking the same
-    // line again collapses it (toggle).
-    document.getElementById('stream-pane').addEventListener('click', (e) => {
+    // line again collapses it (toggle). We suppress the toggle when the click
+    // was actually the end of a text-selection drag, so the user can copy the
+    // raw text. Keyboard activation (Enter/Space) has no pointerdown -> the
+    // pointer record is null/stale and we fall through to the tap path.
+    const DRAG_PX = 6;
+    const POINTER_STALE_MS = 1000;
+    let lastPointer = null;
+
+    const streamPane = document.getElementById('stream-pane');
+
+    streamPane.addEventListener('pointerdown', (e) => {
+        if (current().view !== 'list') return;
+        const toggle = e.target.closest('.raw-toggle');
+        if (!toggle) {
+            lastPointer = null;
+            return;
+        }
+        lastPointer = {x: e.clientX, y: e.clientY, t: Date.now(), toggle};
+    });
+
+    streamPane.addEventListener('click', (e) => {
         if (current().view !== 'list') return;
         const toggle = e.target.closest('.raw-toggle');
         if (!toggle) return;
+
+        const p = lastPointer;
+        lastPointer = null;
+        if (p && p.toggle === toggle && (Date.now() - p.t) < POINTER_STALE_MS) {
+            const dx = e.clientX - p.x;
+            const dy = e.clientY - p.y;
+            if ((dx * dx + dy * dy) > (DRAG_PX * DRAG_PX)) return;
+        }
+
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && sel.toString().length > 0) {
+            const a = sel.anchorNode;
+            const f = sel.focusNode;
+            if ((a && toggle.contains(a)) || (f && toggle.contains(f))) return;
+        }
+
         const line = toggle.closest('.line');
         if (!line) return;
         const wasActive = line.classList.contains('active');
