@@ -305,8 +305,9 @@ async def test_get_root_renders_picker_with_writing_badge(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     # Also create a sibling dir so the picker has more than one option.
     (tmp_path / 'other').mkdir()
+    # ``?picker=1`` forces the picker even when a view cookie is present.
     async with _client(ctx) as client:
-        r = await client.get('/')
+        r = await client.get('/?picker=1')
     assert r.status_code == 200
     body = r.text
     assert 'writing' in body  # the writing dir
@@ -403,7 +404,7 @@ async def test_get_tutor_renders_entries(tmp_path: Path):
     assert 'id="cfg-source-language"' not in body
     assert 'id="cfg-level"' not in body
     assert 'hi' in body  # pre-existing tutor entry
-    assert 'Switch dataset' in body  # header link
+    assert 'href="/?picker=1"' in body  # header title links to picker
     assert 'writing' in body  # current view-dir name shown
 
 
@@ -422,7 +423,7 @@ async def test_get_tutor_marks_non_writing_view(tmp_path: Path):
     # Writing-dir entry a-1/'meaning' should not appear in the other dir's view.
     assert 'meaning' not in body
     assert 'data-entry-id="a-1"' not in body
-    assert 'stdin lines stream into' in body  # banner notes the split
+    assert '>other</a>' in body  # header title shows the non-writing view dir
 
 
 async def test_get_tutor_renders_per_line_controls_on_unexplained_entries(tmp_path: Path):
