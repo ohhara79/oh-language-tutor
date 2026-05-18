@@ -30,6 +30,12 @@ def test_build_base_system_prompt_contains_core_fields() -> None:
     assert 'intermediate' in prompt
 
 
+def test_build_base_system_prompt_mentions_chinese_variant() -> None:
+    prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
+    assert 'Variant' in prompt
+    assert '学习 / 學習' in prompt
+
+
 def test_build_system_prompt_without_extra_equals_base() -> None:
     assert build_system_prompt('English', 'Korean', 'intermediate') == build_base_system_prompt(
         'English',
