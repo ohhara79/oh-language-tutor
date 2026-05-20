@@ -87,9 +87,10 @@
     menuCfg.addEventListener('input', cfgOnFieldEvent);
     menuCfg.addEventListener('change', cfgOnFieldEvent);
 
+    const explainPath = '/tutor/' + encodeURIComponent(datasetName) + '/commands/explain';
     document.body.addEventListener('htmx:configRequest', (evt) => {
         const path = evt.detail && evt.detail.path;
-        if (path !== '/commands/explain') return;
+        if (path !== explainPath) return;
         const params = evt.detail.parameters || {};
         for (const f of CFG_FIELDS) {
             params[f.form] = cfgGet(f.key);
