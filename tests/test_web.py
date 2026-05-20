@@ -18,7 +18,6 @@ from tutor.thread_store import ThreadStore
 from tutor.tutor_store import TutorStore
 from tutor.types import ThreadMessage, ThreadMeta, TutorEntry
 from tutor.web import (
-    VIEW_COOKIE,
     DirSession,
     LazyLog,
     WebContext,
@@ -225,7 +224,7 @@ def _make_session(state_dir: Path, *, env: Any) -> tuple[DirSession, _FakePool]:
     log = LazyLog(state_dir / 'tutor.log', '=== test session start ===\n')
     tutor_store = TutorStore(state_dir / 'tutor.json')
     thread_store = ThreadStore(state_dir / 'threads')
-    sink = WebSink(log=log, tutor_store=tutor_store, env=env)
+    sink = WebSink(log=log, tutor_store=tutor_store, env=env, view_dir=state_dir.name)
     pool = _new_fake_pool()
     session = DirSession(
         state_dir=state_dir.resolve(),
@@ -283,19 +282,25 @@ _AUDIENCE_FORM = {
 }
 
 
-def _client(ctx: WebContext, *, view_dir: str | None = None) -> httpx.AsyncClient:
-    """Build a test client with the view-state cookie pre-set.
+def _client(ctx: WebContext) -> httpx.AsyncClient:
+    """Build a test client against *ctx*'s app.
 
-    Defaults to the writing dir's basename so route tests can hit cookie-gated
-    endpoints directly. Pass ``view_dir=''`` to send a request with no cookie.
+    The view dir is part of the URL path now, so the client carries no cookie
+    and every test that hits a dir-scoped route builds the URL with ``_dir_url``.
     """
     app = build_app(ctx)
     transport = httpx.ASGITransport(app=app)
-    cookies: dict[str, str] = {}
-    name = ctx.writing_dir.name if view_dir is None else view_dir
-    if name:
-        cookies[VIEW_COOKIE] = quote(name, safe='')
-    return httpx.AsyncClient(transport=transport, base_url='http://test', cookies=cookies)
+    return httpx.AsyncClient(transport=transport, base_url='http://test')
+
+
+def _dir_url(ctx: WebContext, suffix: str = '', *, dir_name: str | None = None) -> str:
+    """Build a ``/tutor/<dir>{suffix}`` URL for a dir-scoped route.
+
+    Defaults to the writing dir; tests that target a different dir pass
+    *dir_name* explicitly.
+    """
+    name = ctx.writing_dir.name if dir_name is None else dir_name
+    return f'/tutor/{quote(name, safe="")}{suffix}'
 
 
 # -- picker / open_state_dir -------------------------------------------------
@@ -305,9 +310,8 @@ async def test_get_root_renders_picker_with_writing_badge(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     # Also create a sibling dir so the picker has more than one option.
     (tmp_path / 'other').mkdir()
-    # ``?picker=1`` forces the picker even when a view cookie is present.
     async with _client(ctx) as client:
-        r = await client.get('/?picker=1')
+        r = await client.get('/')
     assert r.status_code == 200
     body = r.text
     assert 'writing' in body  # the writing dir
@@ -325,41 +329,37 @@ async def test_get_root_renders_when_no_dirs_present(tmp_path: Path):
     assert 'No tutor data' in r.text
 
 
-async def test_post_open_state_dir_sets_cookie_and_redirects(tmp_path: Path):
+async def test_post_open_state_dir_redirects_to_dir_path(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     (tmp_path / 'other').mkdir()
-    async with _client(ctx, view_dir='') as client:
+    async with _client(ctx) as client:
         r = await client.post('/commands/open_state_dir', data={'dir_name': 'other'})
     assert r.status_code == 303
-    assert r.headers['location'] == '/tutor'
-    assert r.cookies.get(VIEW_COOKIE) == 'other'
+    assert r.headers['location'] == '/tutor/other'
 
 
 async def test_post_open_state_dir_supports_non_ascii_name(tmp_path: Path):
-    # Regression: state-dir names with non-ASCII characters (e.g. Chinese)
-    # used to crash set_cookie with a latin-1 encode error. The cookie is now
-    # percent-encoded on the wire and decoded on read, so the round-trip
-    # resolves to the right session.
+    # State-dir names with non-ASCII characters (e.g. Chinese) must round-trip
+    # through the URL-encoded redirect Location and resolve to the right session
+    # on the follow-up GET.
     ctx, _ = _build_ctx(tmp_path)
     cjk_name = '老友记.S01E01'
     (tmp_path / cjk_name).mkdir()
-    async with _client(ctx, view_dir='') as client:
+    async with _client(ctx) as client:
         r = await client.post(
             '/commands/open_state_dir',
             data={'dir_name': cjk_name},
         )
         assert r.status_code == 303
-        assert r.headers['location'] == '/tutor'
-        # Follow the redirect on the same client so the freshly-set cookie
-        # is sent back — the index should resolve to the CJK-named dir.
-        r2 = await client.get('/tutor')
+        assert r.headers['location'] == f'/tutor/{quote(cjk_name, safe="")}'
+        r2 = await client.get(r.headers['location'])
     assert r2.status_code == 200
     assert cjk_name in r2.text
 
 
 async def test_post_open_state_dir_rejects_unknown_dir(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
+    async with _client(ctx) as client:
         r = await client.post(
             '/commands/open_state_dir',
             data={'dir_name': 'no-such-dir'},
@@ -369,7 +369,7 @@ async def test_post_open_state_dir_rejects_unknown_dir(tmp_path: Path):
 
 async def test_post_open_state_dir_rejects_traversal(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
+    async with _client(ctx) as client:
         r = await client.post(
             '/commands/open_state_dir',
             data={'dir_name': '../../etc'},
@@ -377,46 +377,40 @@ async def test_post_open_state_dir_rejects_traversal(tmp_path: Path):
     assert r.status_code == 400
 
 
-async def test_get_tutor_without_cookie_redirects_to_picker(tmp_path: Path):
+async def test_get_tutor_unknown_dir_redirects_to_picker(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
-        r = await client.get('/tutor', follow_redirects=False)
+    async with _client(ctx) as client:
+        r = await client.get('/tutor/no-such-dir', follow_redirects=False)
     assert r.status_code == 303
     assert r.headers['location'] == '/'
 
 
-async def test_get_tutor_with_invalid_cookie_redirects_to_picker(tmp_path: Path):
-    ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='no-such-dir') as client:
-        r = await client.get('/tutor', follow_redirects=False)
-    assert r.status_code == 303
-
-
-# -- /tutor index (cookie-routed) --------------------------------------------
+# -- /tutor/{dir_name} index -------------------------------------------------
 
 
 async def test_get_tutor_renders_entries(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.get('/tutor')
+        r = await client.get(_dir_url(ctx))
     assert r.status_code == 200
     body = r.text
     assert 'id="cfg-source-language"' not in body
     assert 'id="cfg-level"' not in body
     assert 'hi' in body  # pre-existing tutor entry
-    assert 'href="/?picker=1"' in body  # header title links to picker
+    assert 'href="/"' in body  # header title links to picker
     assert 'writing' in body  # current view-dir name shown
+    assert 'data-state-dir="writing"' in body  # JS dataset-name source
 
 
 async def test_get_tutor_marks_non_writing_view(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    # Add a second dir + session, point cookie at it.
+    # Add a second dir + session and request it directly via its path.
     other_dir = tmp_path / 'other'
     other_session, _other_pool = _make_session(other_dir, env=ctx.env)
     other_session.tutor_store.append(TutorEntry(raw='from-other', id='o-1'))
     ctx.sessions[other_dir.resolve()] = other_session
-    async with _client(ctx, view_dir='other') as client:
-        r = await client.get('/tutor')
+    async with _client(ctx) as client:
+        r = await client.get(_dir_url(ctx, dir_name='other'))
     assert r.status_code == 200
     body = r.text
     assert 'from-other' in body  # other dir's content
@@ -430,7 +424,7 @@ async def test_get_tutor_renders_per_line_controls_on_unexplained_entries(tmp_pa
     ctx, _ = _build_ctx(tmp_path)
     ctx.writing_session.tutor_store.append(TutorEntry(raw='unexplained line', id='u-9'))
     async with _client(ctx) as client:
-        r = await client.get('/tutor')
+        r = await client.get(_dir_url(ctx))
     body = r.text
     assert 'class="cfg-source-language"' in body
     assert 'class="cfg-target-language"' in body
@@ -443,7 +437,7 @@ async def test_get_tutor_renders_per_line_controls_on_unexplained_entries(tmp_pa
 async def test_get_thread_404_when_missing(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.get('/threads/nope')
+        r = await client.get(_dir_url(ctx, '/threads/nope'))
     assert r.status_code == 404
 
 
@@ -451,17 +445,17 @@ async def test_get_thread_reopens_and_renders(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     pool.threads['t-1'] = _meta(thread_id='t-1', anchor_raw='hi', anchor_id='a-1')
     async with _client(ctx) as client:
-        r = await client.get('/threads/t-1')
+        r = await client.get(_dir_url(ctx, '/threads/t-1'))
     assert r.status_code == 200
     assert 't-1' in r.text
     assert pool.reopened == ['t-1']
 
 
-async def test_get_thread_without_cookie_returns_400(tmp_path: Path):
+async def test_get_thread_unknown_dir_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
-        r = await client.get('/threads/t-1')
-    assert r.status_code == 400
+    async with _client(ctx) as client:
+        r = await client.get('/tutor/no-such-dir/threads/t-1')
+    assert r.status_code == 404
 
 
 async def test_post_open_thread_uses_audience_frozen_on_entry(tmp_path: Path):
@@ -478,7 +472,7 @@ async def test_post_open_thread_uses_audience_frozen_on_entry(tmp_path: Path):
         ),
     )
     async with _client(ctx) as client:
-        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
+        r = await client.post(_dir_url(ctx, '/commands/open_thread'), data={'anchor_id': 'a-1'})
     assert r.status_code == 200
     assert len(pool.opened) == 1
     _tid, anchor_id, src, tgt, level = pool.opened[0]
@@ -489,7 +483,7 @@ async def test_post_open_thread_uses_audience_frozen_on_entry(tmp_path: Path):
 async def test_post_open_thread_legacy_entry_falls_back_to_defaults(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
+        r = await client.post(_dir_url(ctx, '/commands/open_thread'), data={'anchor_id': 'a-1'})
     assert r.status_code == 200
     _tid, _aid, src, tgt, level = pool.opened[0]
     assert (src, tgt, level) == ('English', 'Korean', 'intermediate')
@@ -513,14 +507,14 @@ async def test_post_open_thread_returns_500_when_pool_emits_no_meta(tmp_path: Pa
     pool.open_thread = silent_open  # type: ignore[method-assign]
 
     async with _client(ctx) as client:
-        r = await client.post('/commands/open_thread', data={'anchor_id': 'a-1'})
+        r = await client.post(_dir_url(ctx, '/commands/open_thread'), data={'anchor_id': 'a-1'})
     assert r.status_code == 500
 
 
 async def test_post_open_thread_unknown_entry_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/open_thread', data={'anchor_id': 'missing'})
+        r = await client.post(_dir_url(ctx, '/commands/open_thread'), data={'anchor_id': 'missing'})
     assert r.status_code == 404
 
 
@@ -528,7 +522,7 @@ async def test_post_send_message_fragment_and_pool_called(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/send_message',
+            _dir_url(ctx, '/commands/send_message'),
             data={'thread_id': 't-1', 'text': 'howdy'},
         )
     assert r.status_code == 200
@@ -539,7 +533,7 @@ async def test_post_send_message_fragment_and_pool_called(tmp_path: Path):
 async def test_post_hide_thread_returns_204(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/hide_thread', data={'thread_id': 't-1'})
+        r = await client.post(_dir_url(ctx, '/commands/hide_thread'), data={'thread_id': 't-1'})
     assert r.status_code == 204
     assert pool.hidden == ['t-1']
 
@@ -547,7 +541,7 @@ async def test_post_hide_thread_returns_204(tmp_path: Path):
 async def test_post_delete_thread_returns_html(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/delete_thread', data={'thread_id': 't-1'})
+        r = await client.post(_dir_url(ctx, '/commands/delete_thread'), data={'thread_id': 't-1'})
     assert r.status_code == 200
     assert 'deleted' in r.text.lower()
     assert pool.deleted == ['t-1']
@@ -556,7 +550,7 @@ async def test_post_delete_thread_returns_html(tmp_path: Path):
 async def test_post_delete_tutor_entry_returns_204(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/delete_tutor_entry', data={'anchor_id': 'a-1'})
+        r = await client.post(_dir_url(ctx, '/commands/delete_tutor_entry'), data={'anchor_id': 'a-1'})
     assert r.status_code == 204
     assert pool.deleted_tutor == ['a-1']
 
@@ -568,7 +562,7 @@ async def test_post_explain_unknown_entry_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'missing', **_AUDIENCE_FORM},
         )
     assert r.status_code == 404
@@ -578,7 +572,7 @@ async def test_post_explain_rejects_invalid_level(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'a-1', **_AUDIENCE_FORM, 'level': 'fluent'},
         )
     assert r.status_code == 400
@@ -588,7 +582,7 @@ async def test_post_explain_rejects_empty_audience(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'a-1', **_AUDIENCE_FORM, 'source_language': '   '},
         )
     assert r.status_code == 400
@@ -610,7 +604,7 @@ async def test_post_explain_already_explained_is_idempotent(
     monkeypatch.setattr(web_mod, 'ClaudeSDKClient', factory)
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'a-1', **_AUDIENCE_FORM},
         )
     assert r.status_code == 200
@@ -641,7 +635,7 @@ async def test_post_explain_happy_path(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-1', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
@@ -690,7 +684,7 @@ async def test_post_explain_japanese_injects_kyujitai_ground_truth(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-jp', **_AUDIENCE_FORM, 'source_language': 'Japanese'},
         )
         assert r.status_code == 200
@@ -719,7 +713,7 @@ async def test_post_explain_non_japanese_omits_kyujitai_ground_truth(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-ko', **_AUDIENCE_FORM, 'source_language': 'Korean'},
         )
         assert r.status_code == 200
@@ -743,7 +737,7 @@ async def test_post_explain_empty_response_logs_error_and_keeps_unexplained(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-2', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
@@ -766,7 +760,7 @@ async def test_post_explain_client_failure_logs_error(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-3', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
@@ -795,7 +789,7 @@ async def test_post_explain_uses_context_window(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-4', **_AUDIENCE_FORM},
         )
         assert r.status_code == 200
@@ -812,31 +806,31 @@ async def test_post_explain_uses_context_window(
 
 
 async def test_events_endpoint_returns_sse_response(tmp_path: Path):
-    """GET /events responds 200 with SSE content-type."""
+    """GET /tutor/<dir>/events responds 200 with SSE content-type."""
     ctx, pool = _build_ctx(tmp_path)
     pool.threads['t-1'] = _meta(thread_id='t-1', anchor_raw='x')
     ctx.stop_event.set()
 
     async with _client(ctx) as client:
-        r = await client.get('/events')
+        r = await client.get(_dir_url(ctx, '/events'))
     assert r.status_code == 200
     assert r.headers['content-type'].startswith('text/event-stream')
     assert b': connected' in r.content
     assert b'event: thread_list' in r.content
 
 
-async def test_events_requires_view_cookie(tmp_path: Path):
+async def test_events_unknown_dir_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
-        r = await client.get('/events')
-    assert r.status_code == 400
+    async with _client(ctx) as client:
+        r = await client.get('/tutor/no-such-dir/events')
+    assert r.status_code == 404
 
 
 # -- Laziness: browse-only picks leave the dir clean --------------------------
 
 
 async def test_get_tutor_does_not_create_log_or_threads_dir(tmp_path: Path):
-    """Hitting /tutor on a brand-new dir reads only; it must not touch disk."""
+    """Hitting /tutor/<dir> on a brand-new dir reads only; it must not touch disk."""
     ctx, _ = _build_ctx(tmp_path)
     # Build a fresh, untouched DirSession for a sibling dir. Use the same
     # path-based LazyLog as production.
@@ -849,8 +843,8 @@ async def test_get_tutor_does_not_create_log_or_threads_dir(tmp_path: Path):
     assert not (other_dir / 'tutor.log').exists()
     assert not (other_dir / 'threads').exists()
 
-    async with _client(ctx, view_dir='untouched') as client:
-        r = await client.get('/tutor')
+    async with _client(ctx) as client:
+        r = await client.get(_dir_url(ctx, dir_name='untouched'))
     assert r.status_code == 200
 
     # Reading is a read; nothing on disk should have appeared.
@@ -876,16 +870,16 @@ async def test_lazy_log_creates_file_on_first_write(tmp_path: Path):
 async def test_post_clear_explanation_returns_204_and_calls_pool(tmp_path: Path):
     ctx, pool = _build_ctx(tmp_path)
     async with _client(ctx) as client:
-        r = await client.post('/commands/clear_explanation', data={'anchor_id': 'a-1'})
+        r = await client.post(_dir_url(ctx, '/commands/clear_explanation'), data={'anchor_id': 'a-1'})
     assert r.status_code == 204
     assert pool.deleted_tutor == ['clear:a-1']
 
 
-async def test_post_clear_explanation_without_cookie_returns_400(tmp_path: Path):
+async def test_post_clear_explanation_unknown_dir_returns_404(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='') as client:
-        r = await client.post('/commands/clear_explanation', data={'anchor_id': 'a-1'})
-    assert r.status_code == 400
+    async with _client(ctx) as client:
+        r = await client.post('/tutor/no-such-dir/commands/clear_explanation', data={'anchor_id': 'a-1'})
+    assert r.status_code == 404
 
 
 # -- explain with PromptTooLargeError ----------------------------------------
@@ -904,7 +898,7 @@ async def test_post_explain_oversized_extras_returns_400(
 
     async with _client(ctx) as client:
         r = await client.post(
-            '/commands/explain',
+            _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-pt', **_AUDIENCE_FORM},
         )
     assert r.status_code == 400
@@ -951,7 +945,7 @@ async def test_get_thread_already_active_skips_reopen(tmp_path: Path):
     pool.threads['t-1'] = _meta(thread_id='t-1', anchor_raw='hi', anchor_id='a-1')
     pool._active['t-1'] = object()  # mark already-active
     async with _client(ctx) as client:
-        r = await client.get('/threads/t-1')
+        r = await client.get(_dir_url(ctx, '/threads/t-1'))
     assert r.status_code == 200
     assert pool.reopened == []  # short-circuit kept reopen from firing
 
@@ -995,22 +989,26 @@ def test_get_or_create_session_creates_new_for_unknown_dir(tmp_path: Path):
     assert other.resolve() in ctx.sessions
 
 
-# -- cookie defenses --------------------------------------------------------
+# -- path-segment defenses --------------------------------------------------
 
 
-async def test_get_tutor_with_dot_prefix_cookie_redirects(tmp_path: Path):
+async def test_get_tutor_with_dot_prefix_dir_redirects(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='.hidden') as client:
-        r = await client.get('/tutor', follow_redirects=False)
+    async with _client(ctx) as client:
+        r = await client.get('/tutor/.hidden', follow_redirects=False)
     assert r.status_code == 303
     assert r.headers['location'] == '/'
 
 
-async def test_get_tutor_with_slash_cookie_redirects(tmp_path: Path):
+async def test_get_tutor_with_encoded_slash_dir_rejects(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx, view_dir='a/b') as client:
-        r = await client.get('/tutor', follow_redirects=False)
-    assert r.status_code == 303
+    # ``%2F`` decodes to a literal slash inside the path segment, which the
+    # traversal defense rejects (redirect-to-picker or 404 depending on how the
+    # router resolves it). Either is fine — what matters is it does not load a
+    # session for an attacker-controlled path.
+    async with _client(ctx) as client:
+        r = await client.get('/tutor/a%2Fb', follow_redirects=False)
+    assert r.status_code in {303, 404}
 
 
 # -- _make_lazy_log ---------------------------------------------------------
@@ -1085,7 +1083,7 @@ async def test_events_emits_ping_on_idle_then_exits(
     monkeypatch.setattr('tutor.web.asyncio.wait_for', fake_wait_for)
 
     async with _client(ctx) as client:
-        r = await client.get('/events')
+        r = await client.get(_dir_url(ctx, '/events'))
     assert r.status_code == 200
     assert b': ping' in r.content
     # No initial thread_list frame because pool.list_threads() is empty.

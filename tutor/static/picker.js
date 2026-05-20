@@ -26,13 +26,11 @@
     });
 
     document.getElementById('reset-settings').addEventListener('click', () => {
-        if (!confirm('Reset all settings? This clears audience choices, '
-                + 'scroll position, and the current dataset selection '
-                + 'across all datasets.')) return;
+        if (!confirm('Reset all settings? This clears audience choices and '
+                + 'scroll position across all datasets.')) return;
         Object.keys(localStorage)
             .filter(k => k.startsWith('tutor.'))
             .forEach(k => localStorage.removeItem(k));
-        document.cookie = 'view_state_dir=; Max-Age=0; path=/';
         location.reload();
     });
 })();

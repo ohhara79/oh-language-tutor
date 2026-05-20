@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, override
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 import uvicorn
 from claude_agent_sdk import (
@@ -52,15 +52,6 @@ if TYPE_CHECKING:
 
 _TEMPLATES_DIR = Path(__file__).parent / 'templates'
 _STATIC_DIR = Path(__file__).parent / 'static'
-# Cookie name used to remember which state dir the browser is currently
-# viewing. Set by ``POST /commands/open_state_dir`` and read by every other
-# route that needs to resolve a ``DirSession``.
-VIEW_COOKIE = 'view_state_dir'
-
-
-def _read_view_cookie(request: Request) -> str | None:
-    raw = request.cookies.get(VIEW_COOKIE)
-    return unquote(raw) if raw else None
 
 
 class LazyLog(io.TextIOBase):
@@ -131,7 +122,8 @@ class WebContext:
 
     ``writing_session`` is bound at startup and never moves — stdin always
     writes there. ``sessions`` caches every ``DirSession`` materialized
-    during the process lifetime; entries are reused on cookie revisits.
+    during the process lifetime; entries are reused when the user re-opens
+    a dir.
     """
 
     args: argparse.Namespace
@@ -219,7 +211,7 @@ def make_dir_session(state_dir: Path, args: argparse.Namespace, env: Environment
     log = _make_lazy_log(state_dir, args)
     tutor_store = TutorStore(state_dir / 'tutor.json')
     thread_store = ThreadStore(state_dir / 'threads')
-    sink = WebSink(log=log, tutor_store=tutor_store, env=env)
+    sink = WebSink(log=log, tutor_store=tutor_store, env=env, view_dir=state_dir.name)
     pool = FollowupThreadPool(
         model=args.ask_model,
         sink=sink,
@@ -251,21 +243,20 @@ def _get_or_create_session(ctx: WebContext, state_dir: Path) -> DirSession:
     return session
 
 
-def _resolve_view_session(ctx: WebContext, request: Request) -> DirSession | None:
-    """Return the ``DirSession`` named by the view-state cookie, or ``None``.
+def _resolve_view_session(ctx: WebContext, dir_name: str) -> DirSession | None:
+    """Return the ``DirSession`` named by *dir_name*, or ``None``.
 
-    Defends against path traversal: the cookie value must be a plain basename
+    Defends against path traversal: *dir_name* must be a plain basename
     matching a real direct subdir of ``ctx.discovery_parent``.
     """
-    cookie_val = _read_view_cookie(request)
-    if not cookie_val:
+    if not dir_name:
         return None
-    if '/' in cookie_val or '\\' in cookie_val or cookie_val.startswith('.'):
+    if '/' in dir_name or '\\' in dir_name or dir_name.startswith('.'):
         return None
     valid_names = {p.name for p in list_state_dirs(ctx.discovery_parent)}
-    if cookie_val not in valid_names:
+    if dir_name not in valid_names:
         return None
-    return _get_or_create_session(ctx, ctx.discovery_parent / cookie_val)
+    return _get_or_create_session(ctx, ctx.discovery_parent / dir_name)
 
 
 async def _stream_explain(
@@ -327,17 +318,17 @@ async def _stream_explain(
     session.sink.on_entry_explained(updated)
 
 
-def _require_view_session(ctx: WebContext, request: Request) -> DirSession:
-    """Resolve the view session or raise 400 — for command/data routes.
+def _require_view_session(ctx: WebContext, dir_name: str) -> DirSession:
+    """Resolve the view session for *dir_name* or raise 404.
 
-    Page routes that should send the user back to the picker on a missing
-    cookie should call ``_resolve_view_session`` directly and return a
-    redirect; this helper is for routes that should never be hit without a
-    cookie (POST commands, partials, SSE).
+    Page routes that should send the user back to the picker on an unknown
+    dir should call ``_resolve_view_session`` directly and return a redirect;
+    this helper is for routes that have no graceful fallback (POST commands,
+    partials, SSE).
     """
-    session = _resolve_view_session(ctx, request)
+    session = _resolve_view_session(ctx, dir_name)
     if session is None:
-        raise HTTPException(status_code=400, detail='no view state dir selected')
+        raise HTTPException(status_code=404, detail=f'unknown view state dir: {dir_name!r}')
     return session
 
 
@@ -347,15 +338,12 @@ def build_app(ctx: WebContext) -> FastAPI:
     app.mount('/static', StaticFiles(directory=str(_STATIC_DIR)), name='static')
 
     @app.get('/', response_class=HTMLResponse)
-    async def picker(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
-        if request.query_params.get('picker') != '1' and _resolve_view_session(ctx, request) is not None:
-            return RedirectResponse(url='/tutor', status_code=303)
+    async def picker() -> Response:  # pyright: ignore[reportUnusedFunction]
         dirs = list_state_dirs(ctx.discovery_parent)
-        current = _read_view_cookie(request) or ctx.writing_dir.name
         html_body = ctx.env.get_template('picker.html').render(
             dirs=[d.name for d in dirs],
             writing_dir=ctx.writing_dir.name,
-            current_view=current,
+            current_view=ctx.writing_dir.name,
             version=ctx.version,
         )
         return HTMLResponse(content=html_body)
@@ -367,19 +355,13 @@ def build_app(ctx: WebContext) -> FastAPI:
         valid_names = {p.name for p in list_state_dirs(ctx.discovery_parent)}
         if dir_name not in valid_names:
             raise HTTPException(status_code=400, detail=f'unknown state dir: {dir_name!r}')
-        response = RedirectResponse(url='/tutor', status_code=303)
-        response.set_cookie(
-            VIEW_COOKIE,
-            quote(dir_name, safe=''),
-            samesite='lax',
-            httponly=False,
-            max_age=365 * 24 * 3600,
-        )
-        return response
+        # Per-tab routing: the chosen dir lives in the URL, so reload in one
+        # tab can't be hijacked by a sibling tab that picked a different dir.
+        return RedirectResponse(url=f'/tutor/{quote(dir_name, safe="")}', status_code=303)
 
-    @app.get('/tutor', response_class=HTMLResponse)
-    async def index(request: Request) -> Response:  # pyright: ignore[reportUnusedFunction]
-        session = _resolve_view_session(ctx, request)
+    @app.get('/tutor/{dir_name}', response_class=HTMLResponse)
+    async def index(dir_name: str) -> Response:  # pyright: ignore[reportUnusedFunction]
+        session = _resolve_view_session(ctx, dir_name)
         if session is None:
             return RedirectResponse(url='/', status_code=303)
         entries = session.tutor_store.load()
@@ -392,9 +374,9 @@ def build_app(ctx: WebContext) -> FastAPI:
         )
         return HTMLResponse(content=html_body)
 
-    @app.get('/events')
-    async def events(request: Request) -> StreamingResponse:  # pyright: ignore[reportUnusedFunction]
-        session = _require_view_session(ctx, request)
+    @app.get('/tutor/{dir_name}/events')
+    async def events(request: Request, dir_name: str) -> StreamingResponse:  # pyright: ignore[reportUnusedFunction]
+        session = _require_view_session(ctx, dir_name)
         q = session.sink.subscribe()
 
         async def gen() -> AsyncIterator[bytes]:
@@ -406,6 +388,7 @@ def build_app(ctx: WebContext) -> FastAPI:
                 if initial_threads:
                     fragment = ctx.env.get_template('partials/thread_list.html').render(
                         threads=initial_threads,
+                        view_dir=session.state_dir.name,
                     )
                     fragment = fragment.replace('\n', '').replace('\r', '')
                     yield f'event: thread_list\ndata: {fragment}\n\n'.encode()
@@ -431,12 +414,12 @@ def build_app(ctx: WebContext) -> FastAPI:
             },
         )
 
-    @app.get('/threads/{thread_id}', response_class=HTMLResponse)
+    @app.get('/tutor/{dir_name}/threads/{thread_id}', response_class=HTMLResponse)
     async def get_thread(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         thread_id: str,
     ) -> HTMLResponse:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         meta = session.pool.peek_meta(thread_id)
         if meta is None:
             raise HTTPException(status_code=404, detail='thread not found')
@@ -444,15 +427,18 @@ def build_app(ctx: WebContext) -> FastAPI:
         # reuses session state.
         if thread_id not in session.pool._active:  # noqa: SLF001
             await session.pool.reopen_thread(thread_id)
-        html_body = ctx.env.get_template('partials/thread_conversation.html').render(meta=meta)
+        html_body = ctx.env.get_template('partials/thread_conversation.html').render(
+            meta=meta,
+            view_dir=session.state_dir.name,
+        )
         return HTMLResponse(content=html_body)
 
-    @app.post('/commands/open_thread', response_class=HTMLResponse)
+    @app.post('/tutor/{dir_name}/commands/open_thread', response_class=HTMLResponse)
     async def open_thread(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         anchor_id: Annotated[str, Form()],
     ) -> HTMLResponse:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         entry = next((e for e in session.tutor_store.load() if e.id == anchor_id), None)
         if entry is None:
             raise HTTPException(status_code=404, detail='entry not found')
@@ -475,16 +461,19 @@ def build_app(ctx: WebContext) -> FastAPI:
         if meta is None:
             raise HTTPException(status_code=500, detail='thread open failed')
         session.sink.on_thread_list(session.pool.list_threads())
-        html_body = ctx.env.get_template('partials/thread_conversation.html').render(meta=meta)
+        html_body = ctx.env.get_template('partials/thread_conversation.html').render(
+            meta=meta,
+            view_dir=session.state_dir.name,
+        )
         return HTMLResponse(content=html_body)
 
-    @app.post('/commands/send_message', response_class=HTMLResponse)
+    @app.post('/tutor/{dir_name}/commands/send_message', response_class=HTMLResponse)
     async def send_message(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         thread_id: Annotated[str, Form()],
         text: Annotated[str, Form()],
     ) -> HTMLResponse:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         await session.pool.send_message(thread_id, text)
         html_body = ctx.env.get_template('partials/send_message_result.html').render(
             thread_id=thread_id,
@@ -492,21 +481,21 @@ def build_app(ctx: WebContext) -> FastAPI:
         )
         return HTMLResponse(content=html_body)
 
-    @app.post('/commands/hide_thread')
+    @app.post('/tutor/{dir_name}/commands/hide_thread')
     async def hide_thread(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         thread_id: Annotated[str, Form()],
     ) -> Response:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         await session.pool.hide_when_idle(thread_id)
         return Response(status_code=204)
 
-    @app.post('/commands/delete_thread', response_class=HTMLResponse)
+    @app.post('/tutor/{dir_name}/commands/delete_thread', response_class=HTMLResponse)
     async def delete_thread(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         thread_id: Annotated[str, Form()],
     ) -> HTMLResponse:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         await session.pool.delete_thread(thread_id)
         return HTMLResponse(
             content=(
@@ -514,33 +503,33 @@ def build_app(ctx: WebContext) -> FastAPI:
             ),
         )
 
-    @app.post('/commands/delete_tutor_entry')
+    @app.post('/tutor/{dir_name}/commands/delete_tutor_entry')
     async def delete_tutor_entry(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         anchor_id: Annotated[str, Form()],
     ) -> Response:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         await session.pool.delete_tutor_entry(anchor_id)
         return Response(status_code=204)
 
-    @app.post('/commands/clear_explanation')
+    @app.post('/tutor/{dir_name}/commands/clear_explanation')
     async def clear_explanation(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         anchor_id: Annotated[str, Form()],
     ) -> Response:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         await session.pool.clear_tutor_entry_explanation(anchor_id)
         return Response(status_code=204)
 
-    @app.post('/commands/explain', response_class=HTMLResponse)
+    @app.post('/tutor/{dir_name}/commands/explain', response_class=HTMLResponse)
     async def explain(  # pyright: ignore[reportUnusedFunction]
-        request: Request,
+        dir_name: str,
         entry_id: Annotated[str, Form()],
         source_language: Annotated[str, Form()],
         target_language: Annotated[str, Form()],
         level: Annotated[str, Form()],
     ) -> HTMLResponse:
-        session = _require_view_session(ctx, request)
+        session = _require_view_session(ctx, dir_name)
         _validate_audience(source_language, target_language, level)
         entries = session.tutor_store.load()
         idx = next((i for i, e in enumerate(entries) if e.id == entry_id), -1)

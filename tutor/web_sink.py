@@ -30,10 +30,16 @@ class WebSink:
         log: LogSink,
         tutor_store: TutorStore,
         env: Environment,
+        view_dir: str,
     ) -> None:
         self._log: LogSink = log
         self._tutor_store: TutorStore = tutor_store
         self._env: Environment = env
+        # Bound at construction so SSE broadcasts (which run outside any
+        # request context) can render URL-scoped fragments. Subscribers of a
+        # WebSink are by definition viewing this dir, so a per-sink value is
+        # correct.
+        self._view_dir: str = view_dir
         self._subs: set[asyncio.Queue[tuple[str, str]]] = set()
         self._pending_writes: set[asyncio.Task[None]] = set()
         self._pending_explains: set[asyncio.Task[None]] = set()
@@ -93,6 +99,7 @@ class WebSink:
             explanation_html=explanation_html,
             active=active or streaming,
             streaming=streaming,
+            view_dir=self._view_dir,
         )
 
     def on_entry_appended(self, entry: TutorEntry) -> None:
@@ -148,7 +155,10 @@ class WebSink:
 
     def on_thread_list(self, threads: list[ThreadMeta]) -> None:
         self._thread_list = list(threads)
-        fragment = self._env.get_template('partials/thread_list.html').render(threads=threads)
+        fragment = self._env.get_template('partials/thread_list.html').render(
+            threads=threads,
+            view_dir=self._view_dir,
+        )
         self._broadcast('thread_list', fragment)
 
     def on_tutor_entry_removed(self, anchor_id: str) -> None:

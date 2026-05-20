@@ -6,7 +6,7 @@
     <div class="explanation-body">{{ explanation_html | safe }}</div>
     <div class="line-threads" data-anchor-id="{{ entry.id }}"></div>
     <div class="line-actions">
-      <form hx-post="/commands/open_thread"
+      <form hx-post="/tutor/{{ view_dir | urlencode }}/commands/open_thread"
             hx-target="#thread-conversation"
             hx-swap="innerHTML"
             hx-disabled-elt="find button">
@@ -16,7 +16,7 @@
           <span class="btn-label-busy">Opening…</span>
         </button>
       </form>
-      <form hx-post="/commands/clear_explanation"
+      <form hx-post="/tutor/{{ view_dir | urlencode }}/commands/clear_explanation"
             hx-confirm="Delete this explanation and its threads?"
             hx-swap="none"
             hx-disabled-elt="find button">
@@ -36,7 +36,7 @@
     </div>
     {% else %}
     <div class="line-actions">
-      <form hx-post="/commands/explain"
+      <form hx-post="/tutor/{{ view_dir | urlencode }}/commands/explain"
             hx-target="#line-{{ entry.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="find button">

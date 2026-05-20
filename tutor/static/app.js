@@ -13,7 +13,10 @@
     // Dataset identity for per-dataset persistence. Reused below by both
     // audience settings and scroll-position memory. The dataset switcher
     // triggers a full page reload, so capturing once here is sufficient.
-    const datasetName = (document.querySelector('.view-dir-label')?.textContent || '').trim();
+    // Sourced from <body data-state-dir="...">, which the server populates
+    // from the URL-path dir; this is the same value used to build hx-post
+    // URLs in templates.
+    const datasetName = body.dataset.stateDir || '';
 
     // Audience settings surface as a single set of controls inside the
     // header hamburger menu (.menu-cfg). They are persisted per-dataset
@@ -200,7 +203,8 @@
         if (!threadId) return;
         const fd = new FormData();
         fd.append('thread_id', threadId);
-        fetch('/commands/hide_thread', {method: 'POST', body: fd, keepalive: true});
+        fetch('/tutor/' + encodeURIComponent(datasetName) + '/commands/hide_thread',
+              {method: 'POST', body: fd, keepalive: true});
     }
 
     function push(view, params) {

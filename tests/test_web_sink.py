@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 def _sink(tmp_path: Path, env: Environment) -> tuple[WebSink, io.StringIO, TutorStore]:
     log = io.StringIO()
     store = TutorStore(tmp_path / 'tutor.json')
-    return WebSink(log=log, tutor_store=store, env=env), log, store
+    return WebSink(log=log, tutor_store=store, env=env, view_dir='test-dir'), log, store
 
 
 # -- subscription management ------------------------------------------------

@@ -1,5 +1,5 @@
 <div id="thread-topbar-actions" hx-swap-oob="innerHTML">
-  <form hx-post="/commands/delete_thread"
+  <form hx-post="/tutor/{{ view_dir | urlencode }}/commands/delete_thread"
         hx-confirm="Delete this thread permanently?"
         hx-target="#thread-conversation"
         hx-swap="innerHTML">
@@ -20,7 +20,7 @@
   {% endfor %}
 </div>
 <form class="thread-compose"
-      hx-post="/commands/send_message"
+      hx-post="/tutor/{{ view_dir | urlencode }}/commands/send_message"
       hx-target="#thread-messages-{{ meta.thread_id }}"
       hx-swap="beforeend"
       hx-disabled-elt="find button">

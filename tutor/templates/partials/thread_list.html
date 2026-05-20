@@ -2,7 +2,7 @@
   {% for t in threads %}
   <li class="thread-item" data-anchor-id="{{ t.anchor_id }}">
     <a href="#"
-       hx-get="/threads/{{ t.thread_id }}"
+       hx-get="/tutor/{{ view_dir | urlencode }}/threads/{{ t.thread_id }}"
        hx-target="#thread-conversation"
        hx-swap="innerHTML">
       <span class="anchor">{{ thread_heading(t) | e }}</span>
