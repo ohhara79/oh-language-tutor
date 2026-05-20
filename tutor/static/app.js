@@ -467,6 +467,9 @@
     });
 
     // Enter submits the compose form; Shift+Enter inserts a newline.
+    // On touch-primary devices (mobile/tablet) plain Enter inserts a newline
+    // instead -- submit via the Send button, since on-screen keyboards don't
+    // expose Shift+Enter.
     // IME composition (e.g. Korean jamo -> hangul) must not trigger submit.
     document.body.addEventListener('keydown', (e) => {
         if (!(e.target instanceof HTMLTextAreaElement)) return;
@@ -474,6 +477,7 @@
         if (!form) return;
         if (e.key !== 'Enter' || e.shiftKey) return;
         if (e.isComposing || e.keyCode === 229) return;
+        if (window.matchMedia('(pointer: coarse)').matches) return;
         e.preventDefault();
         form.requestSubmit();
     });
