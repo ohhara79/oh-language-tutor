@@ -509,8 +509,7 @@
     // completes or errors. We match by thread_id parsed from the thread_done
     // payload's OOB selector (hx-swap-oob="outerHTML:#msg-stream-{thread_id}")
     // so cross-thread navigation doesn't accidentally re-enable an unrelated
-    // form. Focus the textarea after re-enabling so the user can immediately
-    // type the next message.
+    // form.
     document.body.addEventListener('htmx:sseBeforeMessage', (evt) => {
         const type = evt.detail && evt.detail.type;
         if (type !== 'thread_done' && type !== 'error') return;
@@ -526,10 +525,7 @@
             const btn = form.querySelector('button');
             const ta = form.querySelector('textarea[name="text"]');
             if (btn) btn.disabled = false;
-            if (ta) {
-                ta.disabled = false;
-                ta.focus();
-            }
+            if (ta) ta.disabled = false;
         });
     });
 })();
