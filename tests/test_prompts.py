@@ -33,7 +33,10 @@ def test_build_base_system_prompt_contains_core_fields() -> None:
 def test_build_base_system_prompt_mentions_chinese_variant() -> None:
     prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
     assert 'Variant' in prompt
-    assert '学习 / 學習' in prompt
+    # The pronunciation bullet must show both simplified and traditional
+    # halves wrapped in per-character pinyin ruby.
+    assert '<ruby>学<rt>xué</rt>习<rt>xí</rt></ruby>' in prompt
+    assert '<ruby>學<rt>xué</rt>習<rt>xí</rt></ruby>' in prompt
 
 
 def test_build_base_system_prompt_chinese_variant_is_mandatory() -> None:
@@ -42,6 +45,34 @@ def test_build_base_system_prompt_chinese_variant_is_mandatory() -> None:
     # Guard against silent reintroduction of the script-identical carve-out
     # that allowed the model to drop the Variant row on short lines.
     assert 'script-identical' not in prompt
+
+
+def test_build_base_system_prompt_chinese_pinyin_ruby() -> None:
+    prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
+    # Every Han-character span is wrapped in <ruby><rt> with per-character pinyin.
+    assert '<ruby>' in prompt
+    assert '<rt>' in prompt
+    # The rule must apply beyond the Vocabulary row — Variant and quoted
+    # Expression / Context phrases also get pinyin ruby.
+    assert 'Vocabulary headwords' in prompt
+    assert 'Variant rewrite' in prompt
+    assert 'Expression or Context' in prompt
+    # One Han character = one syllable; per-character ruby is the rule.
+    assert 'one Han character = one syllable' in prompt
+    # The 你好 example must use the per-character ruby form, not the old
+    # parenthetical pinyin form.
+    assert '<ruby>你<rt>nǐ</rt>好<rt>hǎo</rt></ruby>' in prompt
+
+
+def test_build_base_system_prompt_chinese_variant_calls_for_ruby() -> None:
+    prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
+    # The Variant row clause must direct the model to apply pinyin ruby to the
+    # simplified ↔ traditional rewrite, not just copy bare characters.
+    variant_idx = prompt.index('\U0001f501 Variant:')
+    pronunciation_idx = prompt.index('Pronunciation notation:')
+    variant_clause = prompt[variant_idx:pronunciation_idx]
+    assert '<ruby>' in variant_clause
+    assert 'pinyin' in variant_clause
 
 
 def test_build_base_system_prompt_mentions_japanese_kyujitai() -> None:
@@ -114,8 +145,8 @@ def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
 
 def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
     prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
-    # Chinese pinyin + IPA, both inside the same parens.
-    assert '(xuéxí, [ɕɥěɕǐ])' in prompt
+    # Chinese per-character pinyin ruby + IPA in brackets.
+    assert '<ruby>学<rt>xué</rt>习<rt>xí</rt></ruby> / <ruby>學<rt>xué</rt>習<rt>xí</rt></ruby> [ɕɥěɕǐ]' in prompt
     # Japanese furigana ruby + IPA in brackets.
     assert '<ruby>受け入れる<rt>うけいれる</rt></ruby> [ɯke̞iɾe̞ɾɯ]' in prompt  # noqa: RUF001
     # Korean Sino-Korean dual-script item: romanization + IPA in parens.
