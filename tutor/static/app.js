@@ -235,21 +235,31 @@
         history.back();
     });
 
-    // Tap a raw-line toggle in list view -> inline-expand that line's detail.
-    // Clicking a different line collapses the previous one; clicking the same
-    // line again collapses it (toggle). We suppress the toggle when the click
-    // was actually the end of a text-selection drag, so the user can copy the
-    // raw text. Keyboard activation (Enter/Space) has no pointerdown -> the
-    // pointer record is null/stale and we fall through to the tap path.
+    // Tap a raw-line toggle in list view -> inline-expand that line's detail;
+    // tap the rendered explanation -> collapse that line. Clicking a different
+    // line collapses the previous one; clicking the same line's raw text again
+    // collapses it (toggle). We suppress the toggle when the click was actually
+    // the end of a text-selection drag, so the user can copy the raw text or
+    // the explanation. Keyboard activation (Enter/Space) has no pointerdown ->
+    // the pointer record is null/stale and we fall through to the tap path.
+    // Streaming explanations are excluded — they're transient output, not a
+    // stable collapse target.
     const DRAG_PX = 6;
     const POINTER_STALE_MS = 1000;
     let lastPointer = null;
 
     const streamPane = document.getElementById('stream-pane');
 
+    function toggleTarget(el) {
+        const t = el.closest('.raw-toggle, .explanation-body');
+        if (!t) return null;
+        if (t.classList.contains('explain-stream-body')) return null;
+        return t;
+    }
+
     streamPane.addEventListener('pointerdown', (e) => {
         if (current().view !== 'list') return;
-        const toggle = e.target.closest('.raw-toggle');
+        const toggle = toggleTarget(e.target);
         if (!toggle) {
             lastPointer = null;
             return;
@@ -259,8 +269,11 @@
 
     streamPane.addEventListener('click', (e) => {
         if (current().view !== 'list') return;
-        const toggle = e.target.closest('.raw-toggle');
+        const toggle = toggleTarget(e.target);
         if (!toggle) return;
+
+        // Markdown links inside the explanation must navigate, not collapse.
+        if (toggle.classList.contains('explanation-body') && e.target.closest('a')) return;
 
         const p = lastPointer;
         lastPointer = null;
