@@ -49,8 +49,10 @@ def test_build_base_system_prompt_mentions_japanese_kyujitai() -> None:
     # The Variant row must call out the kyūjitai (旧字体) rewrite for Japanese.
     assert 'kyūjitai' in prompt
     assert '旧字体' in prompt
-    # The pronunciation bullet must show the shinjitai/kyūjitai vocab format.
-    assert '学校 / 學校' in prompt
+    # The pronunciation bullet must show the shinjitai/kyūjitai vocab format
+    # using furigana ruby tags for both halves.
+    assert '<ruby>学校<rt>がっこう</rt></ruby>' in prompt
+    assert '<ruby>學校<rt>がっこう</rt></ruby>' in prompt
 
 
 def test_build_base_system_prompt_japanese_variant_conditions() -> None:
@@ -60,6 +62,32 @@ def test_build_base_system_prompt_japanese_variant_conditions() -> None:
     assert 'source is Japanese' in prompt
     # The "skip any empty section" override still applies to this row.
     assert 'does not apply to this row' in prompt
+
+
+def test_build_base_system_prompt_japanese_furigana_ruby() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # Every kanji-bearing Japanese form is wrapped in <ruby><rt> furigana.
+    assert '<ruby>' in prompt
+    assert '<rt>' in prompt
+    # The rule must apply beyond the Vocabulary row — Variant and quoted
+    # Expression / Context phrases also get furigana.
+    assert 'Vocabulary headwords' in prompt
+    assert 'Variant rewrite' in prompt
+    assert 'Expression or Context' in prompt
+    # Pure-kana / ASCII tokens are explicitly excluded so the model doesn't
+    # try to wrap ありがとう or English glosses in <ruby>.
+    assert 'unwrapped' in prompt
+
+
+def test_build_base_system_prompt_japanese_variant_calls_for_ruby() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # The Variant row clause must direct the model to apply furigana to the
+    # kyūjitai rewrite, not just copy bare kanji.
+    variant_idx = prompt.index('\U0001f501 Variant:')
+    pronunciation_idx = prompt.index('Pronunciation notation:')
+    variant_clause = prompt[variant_idx:pronunciation_idx]
+    assert '<ruby>' in variant_clause
+    assert 'furigana' in variant_clause
 
 
 def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
@@ -88,8 +116,8 @@ def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
     prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
     # Chinese pinyin + IPA, both inside the same parens.
     assert '(xuéxí, [ɕɥěɕǐ])' in prompt
-    # Japanese hiragana + IPA.
-    assert '(うけいれる, [ɯke̞iɾe̞ɾɯ])' in prompt  # noqa: RUF001
+    # Japanese furigana ruby + IPA in brackets.
+    assert '<ruby>受け入れる<rt>うけいれる</rt></ruby> [ɯke̞iɾe̞ɾɯ]' in prompt  # noqa: RUF001
     # Korean Sino-Korean dual-script item: romanization + IPA in parens.
     assert '(haksŭp, [haks͈ɯp])' in prompt  # noqa: RUF001
     # Phonetic-script catch-all carries IPA in brackets.
