@@ -251,7 +251,7 @@
     const streamPane = document.getElementById('stream-pane');
 
     function toggleTarget(el) {
-        const t = el.closest('.raw-toggle, .explanation-body');
+        const t = el.closest('.raw-toggle, .explanation-body, .line-actions');
         if (!t) return null;
         if (t.classList.contains('explain-stream-body')) return null;
         return t;
@@ -274,6 +274,8 @@
 
         // Markdown links inside the explanation must navigate, not collapse.
         if (toggle.classList.contains('explanation-body') && e.target.closest('a')) return;
+        // Ask / Delete / Explain buttons (and their forms) must submit, not collapse.
+        if (toggle.classList.contains('line-actions') && e.target.closest('button, a, input')) return;
 
         const p = lastPointer;
         lastPointer = null;

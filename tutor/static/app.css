@@ -195,6 +195,7 @@ body:not(.view-picker) header {
 .explanation-body :first-child { margin-top: 0; }
 .explanation-body :last-child { margin-bottom: 0; }
 body.view-list .explanation-body:not(.explain-stream-body) { cursor: pointer; }
+body.view-list .line-actions { cursor: pointer; }
 
 .explain-stream {
     white-space: pre-wrap;
