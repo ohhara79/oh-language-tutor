@@ -198,16 +198,7 @@ body.view-list .explanation-body:not(.explain-stream-body) { cursor: pointer; }
 body.view-list .line-actions { cursor: pointer; }
 
 .explain-stream {
-    white-space: pre-wrap;
     word-break: break-word;
-}
-.line.streaming .explain-stream::after {
-    content: '\2588';
-    margin-left: 1px;
-    animation: explain-cursor-blink 1s steps(2, start) infinite;
-}
-@keyframes explain-cursor-blink {
-    to { visibility: hidden; }
 }
 .explain-status {
     font-size: 0.9rem;

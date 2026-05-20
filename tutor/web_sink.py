@@ -44,6 +44,10 @@ class WebSink:
         self._pending_writes: set[asyncio.Task[None]] = set()
         self._pending_explains: set[asyncio.Task[None]] = set()
         self._thread_list: list[ThreadMeta] = []
+        # Accumulated text per in-flight stream, so each chunk can re-render
+        # the full markdown for a best-effort progressive preview.
+        self._explain_buffers: dict[str, str] = {}
+        self._thread_buffers: dict[str, str] = {}
 
     # -- subscription ---------------------------------------------------------
 
@@ -111,6 +115,7 @@ class WebSink:
     def on_entry_explained(self, entry: TutorEntry) -> None:
         explanation = entry.explanation or ''
         self._log.write(f'--- explanation for: {entry.raw}\n{explanation}\n---\n')
+        self._explain_buffers.pop(entry.id, None)
         fragment = self.render_line(entry, active=True)
         # The line.html section already carries id="line-{entry.id}", so an
         # outerHTML OOB swap targeting that id replaces the unexplained
@@ -123,15 +128,24 @@ class WebSink:
         self._broadcast('entry_explained', oob_fragment)
 
     def on_thread_chunk(self, thread_id: str, chunk: str) -> None:
-        fragment = f'<span hx-swap-oob="beforeend:#msg-stream-{html.escape(thread_id)}">{html.escape(chunk)}</span>'
+        accumulated = self._thread_buffers.get(thread_id, '') + chunk
+        self._thread_buffers[thread_id] = accumulated
+        rendered = render_markdown(accumulated)
+        target = f'#msg-stream-{html.escape(thread_id)}'
+        fragment = f'<div hx-swap-oob="innerHTML:{target}">{rendered}</div>'
         self._broadcast('thread_chunk', fragment)
 
     def on_explain_chunk(self, entry_id: str, chunk: str) -> None:
-        fragment = f'<span hx-swap-oob="beforeend:#explain-stream-{html.escape(entry_id)}">{html.escape(chunk)}</span>'
+        accumulated = self._explain_buffers.get(entry_id, '') + chunk
+        self._explain_buffers[entry_id] = accumulated
+        rendered = render_markdown(accumulated)
+        target = f'#explain-stream-{html.escape(entry_id)}'
+        fragment = f'<div hx-swap-oob="innerHTML:{target}">{rendered}</div>'
         self._broadcast('explain_chunk', fragment)
 
     def on_explain_aborted(self, entry: TutorEntry) -> None:
         """Roll the line back to its unexplained variant after an explain failure."""
+        self._explain_buffers.pop(entry.id, None)
         fragment = self.render_line(entry)
         oob_fragment = fragment.replace(
             f'id="line-{entry.id}"',
@@ -148,6 +162,7 @@ class WebSink:
         # the next turn's send_message_result.html appends a fresh placeholder
         # with that id, and a duplicate would cause OOB swaps (querySelectorAll)
         # to hit both elements.
+        self._thread_buffers.pop(thread_id, None)
         rendered = render_markdown(last_assistant) if last_assistant else ''
         target = f'#msg-stream-{html.escape(thread_id)}'
         fragment = f'<div class="msg assistant" hx-swap-oob="outerHTML:{target}">{rendered}</div>'
