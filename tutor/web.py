@@ -134,7 +134,7 @@ class WebContext:
     discovery_parent: Path
     sessions: dict[Path, DirSession]
     writing_session: DirSession
-    extras_text: str | None  # appended to every per-request system prompt
+    extras_text: str | None  # appended to explain prompts only when the viewing dir is the writing dir
     env: Environment
     version: str  # cache-buster for static assets
 
@@ -545,12 +545,13 @@ def build_app(ctx: WebContext) -> FastAPI:
         else:
             kyujitai_variant = None
             kyujitai_mappings = None
+        extras = ctx.extras_text if session.state_dir == ctx.writing_dir else None
         try:
             system_prompt = build_system_prompt(
                 source_language,
                 target_language,
                 level,
-                ctx.extras_text,
+                extras,
                 kyujitai_variant=kyujitai_variant,
                 kyujitai_mappings=kyujitai_mappings,
             )

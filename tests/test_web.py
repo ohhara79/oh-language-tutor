@@ -882,7 +882,7 @@ async def test_post_clear_explanation_unknown_dir_returns_404(tmp_path: Path):
     assert r.status_code == 404
 
 
-# -- explain with PromptTooLargeError ----------------------------------------
+# -- explain extras gating / PromptTooLargeError -----------------------------
 
 
 async def test_post_explain_oversized_extras_returns_400(
@@ -903,6 +903,61 @@ async def test_post_explain_oversized_extras_returns_400(
         )
     assert r.status_code == 400
     assert 'execve per-arg cap' in r.text
+
+
+_EXTRAS_MARKER = 'ADDITIONAL SOURCE-SPECIFIC CONTEXT:'
+
+
+async def test_post_explain_writing_dir_includes_extras(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path, extras_text='SHOW-NOTES-XYZ')
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='target', id='u-w'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient([[make_assistant('explained'), make_result('sid')]]),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post(
+            _dir_url(ctx, '/commands/explain'),
+            data={'entry_id': 'u-w', **_AUDIENCE_FORM},
+        )
+        assert r.status_code == 200
+        await ctx.writing_session.sink.flush_pending_writes()
+
+    [opts] = fake_client_factory.option_calls
+    assert _EXTRAS_MARKER in opts.system_prompt
+    assert 'SHOW-NOTES-XYZ' in opts.system_prompt
+
+
+async def test_post_explain_sibling_dir_omits_extras(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path, extras_text='SHOW-NOTES-XYZ')
+    sibling_dir = tmp_path / 'other'
+    sibling_session = _get_or_create_session(ctx, sibling_dir)
+    sibling_session.tutor_store.append(TutorEntry(raw='target', id='u-s'))
+    fake_client_factory.push(
+        FakeClaudeSDKClient([[make_assistant('explained'), make_result('sid')]]),
+    )
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post(
+            _dir_url(ctx, '/commands/explain', dir_name='other'),
+            data={'entry_id': 'u-s', **_AUDIENCE_FORM},
+        )
+        assert r.status_code == 200
+        await sibling_session.sink.flush_pending_writes()
+
+    [opts] = fake_client_factory.option_calls
+    assert _EXTRAS_MARKER not in opts.system_prompt
+    assert 'SHOW-NOTES-XYZ' not in opts.system_prompt
 
 
 # -- LazyLog edges -----------------------------------------------------------
