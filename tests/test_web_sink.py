@@ -94,15 +94,14 @@ async def test_on_entry_explained_broadcasts_oob_swap(tmp_path: Path, jinja_env:
     assert store.load() == []
 
 
-async def test_on_thread_chunk_broadcasts_escaped_fragment(tmp_path: Path, jinja_env: Environment):
+async def test_on_thread_chunk_broadcasts_rendered_markdown(tmp_path: Path, jinja_env: Environment):
     sink, _, _ = _sink(tmp_path, jinja_env)
     q = sink.subscribe()
-    sink.on_thread_chunk('tid-1', '<script>x</script>')
+    sink.on_thread_chunk('tid-1', '**bold**')
     event, fragment = await q.get()
     assert event == 'thread_chunk'
-    assert 'msg-stream-tid-1' in fragment
-    assert '&lt;script&gt;' in fragment
-    assert '<script>x</script>' not in fragment
+    assert 'hx-swap-oob="innerHTML:#msg-stream-tid-1"' in fragment
+    assert '<strong>bold</strong>' in fragment
 
 
 async def test_on_thread_done_with_text_renders_markdown(tmp_path: Path, jinja_env: Environment):
@@ -181,15 +180,14 @@ def test_render_line_explained_shows_ask_button(tmp_path: Path, jinja_env: Envir
     assert 'meaning' in html
 
 
-async def test_on_explain_chunk_broadcasts_escaped_fragment(tmp_path: Path, jinja_env: Environment):
+async def test_on_explain_chunk_broadcasts_rendered_markdown(tmp_path: Path, jinja_env: Environment):
     sink, _, _ = _sink(tmp_path, jinja_env)
     q = sink.subscribe()
-    sink.on_explain_chunk('e-1', '<b>x</b>')
+    sink.on_explain_chunk('e-1', '**bold**')
     event, fragment = await q.get()
     assert event == 'explain_chunk'
-    assert 'explain-stream-e-1' in fragment
-    assert '&lt;b&gt;x&lt;/b&gt;' in fragment
-    assert '<b>x</b>' not in fragment
+    assert 'hx-swap-oob="innerHTML:#explain-stream-e-1"' in fragment
+    assert '<strong>bold</strong>' in fragment
 
 
 async def test_on_explain_aborted_emits_oob_unexplained_variant(tmp_path: Path, jinja_env: Environment):
