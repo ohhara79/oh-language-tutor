@@ -45,6 +45,10 @@ def test_build_base_system_prompt_chinese_variant_is_mandatory() -> None:
     # Guard against silent reintroduction of the script-identical carve-out
     # that allowed the model to drop the Variant row on short lines.
     assert 'script-identical' not in prompt
+    # Even when simplified and traditional come out byte-identical, the row
+    # must still appear so the learner reads pinyin for the full sentence.
+    assert 'character-for-character identical' in prompt
+    assert 'raw 你好 → variant 你好' in prompt
 
 
 def test_build_base_system_prompt_chinese_pinyin_ruby() -> None:
@@ -93,6 +97,13 @@ def test_build_base_system_prompt_japanese_variant_conditions() -> None:
     assert 'source is Japanese' in prompt
     # The "skip any empty section" override still applies to this row.
     assert 'does not apply to this row' in prompt
+    # When no GROUND TRUTH block is supplied (kyūjitai is a no-op for this
+    # line), the row must still fire and carry furigana — the previous
+    # "omit the row" carve-out is gone.
+    assert 'kyūjitai conversion is a no-op' in prompt
+    assert 'copy the original target line verbatim' in prompt
+    # Omission is now reserved for lines with no kanji at all.
+    assert 'no kanji at all' in prompt
 
 
 def test_build_base_system_prompt_japanese_furigana_ruby() -> None:
@@ -108,6 +119,19 @@ def test_build_base_system_prompt_japanese_furigana_ruby() -> None:
     # Pure-kana / ASCII tokens are explicitly excluded so the model doesn't
     # try to wrap ありがとう or English glosses in <ruby>.
     assert 'unwrapped' in prompt
+
+
+def test_build_base_system_prompt_variant_row_overrides_skip_empty() -> None:
+    # The Variant row carries the per-line pronunciation ruby for Chinese
+    # (pinyin) and Japanese (furigana), so the generic "skip any empty
+    # section" rule in the rubric must not let the model drop it when the
+    # rewrite ends up identical to the source line.
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    variant_idx = prompt.index('\U0001f501 Variant:')
+    pronunciation_idx = prompt.index('Pronunciation notation:')
+    variant_clause = prompt[variant_idx:pronunciation_idx]
+    assert 'does not apply to this row for any language' in variant_clause
+    assert 'character-for-character identical to the source line' in variant_clause
 
 
 def test_build_base_system_prompt_japanese_variant_calls_for_ruby() -> None:
