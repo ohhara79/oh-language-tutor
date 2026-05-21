@@ -256,8 +256,8 @@ def test_build_base_system_prompt_korean_partial_conversion_allowed() -> None:
 def test_build_base_system_prompt_korean_variant_calls_for_ruby() -> None:
     prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
     # The Variant row clause must direct the model to apply per-character ruby
-    # to the Korean rewrite — Hangul ruby over hanja in one direction, hanja
-    # ruby over Hangul in the other.
+    # to the Korean rewrite under one unified orientation: Hanja as base,
+    # Hangul as <rt>, regardless of input script.
     variant_idx = prompt.index('\U0001f501 Variant:')
     pronunciation_idx = prompt.index('Pronunciation notation:')
     variant_clause = prompt[variant_idx:pronunciation_idx]
@@ -265,9 +265,10 @@ def test_build_base_system_prompt_korean_variant_calls_for_ruby() -> None:
     assert '<rt>' in variant_clause
     # Per-character / one-hanja-equals-one-syllable alignment must be spelled out.
     assert 'one hanja = one Hangul syllable' in variant_clause
-    # Both directions of the ruby rule must be present.
+    # The fixed orientation must be stated positively and as a prohibition.
+    assert 'Hanja as base' in variant_clause
     assert 'Hangul ruby' in variant_clause
-    assert 'hanja ruby' in variant_clause
+    assert 'NEVER put Hangul as the base or hanja inside <rt>' in variant_clause
     # Particles, endings, native Korean, and kept-as-input spans must be
     # explicitly excluded from ruby wrapping.
     assert 'NEVER wrap' in variant_clause
@@ -276,12 +277,11 @@ def test_build_base_system_prompt_korean_variant_calls_for_ruby() -> None:
 
 def test_build_base_system_prompt_korean_variant_ruby_worked_examples() -> None:
     prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
-    # One worked example per direction must appear verbatim so the model has
-    # a copy-shaped template to follow.
-    # Hangul input → hanja variant with Hangul ruby (from the input) over the hanja.
-    assert '<ruby>工<rt>공</rt>夫<rt>부</rt></ruby>' in prompt
-    # Hanja input → Hangul variant with hanja ruby (from the input) over the Hangul.
-    assert '<ruby>공<rt>工</rt>부<rt>夫</rt></ruby>' in prompt
+    # Both worked examples end up Hanja-base/Hangul-ruby. The Hangul-input
+    # example shows the line gaining hanja; the Hanja-input example shows
+    # the hanja kept verbatim with the Hangul reading supplied as <rt>.
+    assert ('input 공부합니다 → variant <ruby>工<rt>공</rt>夫<rt>부</rt></ruby>합니다') in prompt
+    assert ('input 工夫합니다 → variant <ruby>工<rt>공</rt>夫<rt>부</rt></ruby>합니다') in prompt
 
 
 def test_build_base_system_prompt_korean_uncertain_vocab_drops_slash() -> None:
