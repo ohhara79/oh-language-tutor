@@ -300,7 +300,11 @@ def build_base_system_prompt(
     variant_row = _variant_row(source_language)
     if variant_row is not None:
         rows.append(variant_row)
-    rows.append(f'  \U0001f4da Vocabulary: <2-3 items, {source_language} word [pronunciation] → {target_language}>')
+    rows.append(
+        f'  \U0001f4da Vocabulary:\n'
+        f'  - <{source_language} word [pronunciation] → {target_language}>\n'
+        f'  - <... 2-5 items total, one bullet per line>'
+    )
     rows.append(f'  \U0001f4a1 Expression: <one idiom/slang/grammar pattern, explained in {target_language}>')
     rows.append(
         '  \U0001f3ac Context:    <one sentence on what the speaker means in THIS '

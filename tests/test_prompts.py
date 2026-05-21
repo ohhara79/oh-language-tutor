@@ -144,6 +144,23 @@ def test_build_base_system_prompt_japanese_variant_calls_for_ruby() -> None:
     assert 'furigana' in variant_clause
 
 
+def test_build_base_system_prompt_vocabulary_template_is_bulleted() -> None:
+    # The Vocabulary section must show its 2-5 items as a markdown bullet
+    # list, not an inline comma-separated string — otherwise render_markdown
+    # collapses them into a single <p>. The template itself has to model
+    # that layout so the LLM can pattern-match it.
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    vocab_idx = prompt.index('\U0001f4da Vocabulary:')
+    # Whatever follows the label up to the next blank line is the
+    # vocabulary block; it must contain at least two bullet lines.
+    block = prompt[vocab_idx : prompt.index('\n\n', vocab_idx)]
+    bullet_lines = [line for line in block.split('\n') if line.lstrip().startswith('- ')]
+    assert len(bullet_lines) >= 2, f'vocabulary block is not bulleted:\n{block!r}'
+    # The widened range (2-5 items) must be present so the model knows it
+    # may go past three when the line has more learnable vocabulary.
+    assert '2-5 items' in block
+
+
 def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
     # Python-markdown collapses consecutive label lines into one <p> unless a
     # blank line separates them. Each non-leading section label must be
