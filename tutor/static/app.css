@@ -35,7 +35,6 @@ body:not(.view-picker) header {
     font-size: 1rem;
     font-weight: 600;
     min-width: 0;
-    flex: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
