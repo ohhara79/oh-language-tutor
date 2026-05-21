@@ -603,9 +603,14 @@ async def test_post_explain_rejects_language_mismatch(
             _dir_url(ctx, '/commands/explain'),
             data={'entry_id': 'u-mm', **_AUDIENCE_FORM},  # source_language='English'
         )
-    assert r.status_code == 400
+    # 200 with an HTMX-swappable line that carries an inline error and the
+    # Explain form so the user can retry after fixing the menu setting.
+    assert r.status_code == 200
+    assert 'id="line-u-mm"' in r.text
+    assert 'line-error' in r.text
     assert 'Korean' in r.text
     assert 'English' in r.text
+    assert '/commands/explain' in r.text  # Explain form still present
     # Entry stays unexplained, and no Claude session was ever constructed.
     [stored] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-mm']
     assert stored.explanation is None

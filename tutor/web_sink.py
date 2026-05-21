@@ -88,12 +88,15 @@ class WebSink:
         *,
         active: bool = False,
         streaming: bool = False,
+        error_message: str | None = None,
     ) -> str:
         """Render a TutorEntry to its partial HTML.
 
         Three states: explained (rendered markdown body), streaming (empty
         container that SSE chunks land in), or unexplained (Explain/Delete
         buttons). ``streaming`` implies ``active`` so the line is open.
+        ``error_message`` attaches an inline notice on the unexplained
+        branch so the user sees why their last attempt was rejected.
         """
         explanation_html = render_markdown(entry.explanation) if entry.explanation is not None else ''
         return self._env.get_template('partials/line.html').render(
@@ -101,8 +104,9 @@ class WebSink:
             threads=[],
             raw_escaped=html.escape(entry.raw),
             explanation_html=explanation_html,
-            active=active or streaming,
+            active=active or streaming or error_message is not None,
             streaming=streaming,
+            error_message=error_message,
             view_dir=self._view_dir,
         )
 

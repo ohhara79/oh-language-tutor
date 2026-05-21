@@ -35,6 +35,9 @@
       <span class="explain-status">Explaining…</span>
     </div>
     {% else %}
+    {% if error_message %}
+    <div class="line-error" role="alert" aria-live="polite">{{ error_message }}</div>
+    {% endif %}
     <div class="line-actions">
       <form hx-post="/tutor/{{ view_dir | urlencode }}/commands/explain"
             hx-target="#line-{{ entry.id }}"

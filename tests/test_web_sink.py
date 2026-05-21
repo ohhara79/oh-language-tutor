@@ -180,6 +180,34 @@ def test_render_line_explained_shows_ask_button(tmp_path: Path, jinja_env: Envir
     assert 'meaning' in html
 
 
+def test_render_line_unexplained_with_error_message_shows_inline_error(
+    tmp_path: Path,
+    jinja_env: Environment,
+):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    html = sink.render_line(
+        TutorEntry(raw='raw', id='x'),
+        error_message='language does not match',
+    )
+    # Inline error block is rendered with the message and accessibility attrs.
+    assert 'class="line-error"' in html
+    assert 'language does not match' in html
+    assert 'role="alert"' in html
+    # The Explain form is still present so the user can retry after fixing the menu.
+    assert 'Explain' in html
+    # And the line is in its open/active state.
+    assert ' active' in html
+
+
+def test_render_line_unexplained_without_error_message_omits_block(
+    tmp_path: Path,
+    jinja_env: Environment,
+):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    html = sink.render_line(TutorEntry(raw='raw', id='x'))
+    assert 'line-error' not in html
+
+
 async def test_on_explain_chunk_broadcasts_rendered_markdown(tmp_path: Path, jinja_env: Environment):
     sink, _, _ = _sink(tmp_path, jinja_env)
     q = sink.subscribe()

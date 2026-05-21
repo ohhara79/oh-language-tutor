@@ -541,8 +541,9 @@ def build_app(ctx: WebContext) -> FastAPI:
             return HTMLResponse(content=session.sink.render_line(target, active=True))
         mismatch_msg = detect_language_mismatch(source_language, target.raw)
         if mismatch_msg is not None:
-            session.sink.on_error(mismatch_msg)
-            raise HTTPException(status_code=400, detail=mismatch_msg)
+            return HTMLResponse(
+                content=session.sink.render_line(target, error_message=mismatch_msg),
+            )
         if is_japanese(source_language):
             kyujitai_variant = to_kyujitai_template(target.raw)
             kyujitai_mappings = relevant_kyujitai_mappings(target.raw)
