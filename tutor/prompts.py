@@ -110,7 +110,12 @@ _VARIANT_CLAUSE_KOREAN = (
     'multi-syllable Sino-Korean word — the remaining Hangul '
     'syllables abutting the <ruby> form a non-word and teach the '
     'learner a broken spelling. If you are not confident about every '
-    'syllable of the word, leave the whole word in Hangul. NEVER wrap '
+    'syllable of the word, leave the whole word in Hangul. Cross-row '
+    "consistency: rubification here MUST match the vocabulary row's "
+    'dual-script choice for the same word — if vocab shows it as '
+    '한글 / 漢字, this row wraps it as <ruby>HANJA<rt>HANGUL</rt></ruby> '
+    'using the SAME hanja characters; if this row leaves the word in '
+    'plain Hangul, vocab must drop the slash for that word. NEVER wrap '
     'spans that you left in plain Hangul (because the hanja was '
     'uncertain), particles (조사), verb / adjective endings, or native '
     'Korean (고유어) words — a wrong ruby teaches the learner the '
@@ -217,6 +222,13 @@ _PRONUNCIATION_BULLET_KOREAN = (
     'is uncertain — Hangul is phonetic so IPA in brackets suffices, '
     'e.g. 아름답다 [a̠ɾɯmda̠p̚t͈a̠] → beautiful (native), and '  # noqa: RUF001
     '사기 [sʌːɡi] → fraud (Sino-Korean but hanja unclear from context).\n'  # noqa: RUF001
+    '  Cross-row consistency: the same Sino-Korean word must use the '
+    'SAME script choice in BOTH rows — if vocab shows it as 한글 / 漢字, '
+    'the Variant row must wrap it as <ruby>漢字<rt>한글</rt></ruby> '
+    'using the SAME hanja characters; if the Variant row leaves the '
+    'word in plain Hangul (un-rubied), vocab must drop the slash and '
+    'emit Hangul only for that word. NEVER let the same Sino-Korean '
+    'word appear as Hangul-only on one row and 한글 / 漢字 on the other.\n'
 )
 
 _DUAL_SCRIPT_BACKSTOP_BULLET = (

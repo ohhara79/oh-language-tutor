@@ -305,6 +305,28 @@ def test_build_base_system_prompt_korean_variant_forbids_half_converted_word() -
     assert 'NEVER <ruby>帽<rt>모</rt><rt>자</rt></ruby>' in variant_clause
 
 
+def test_build_base_system_prompt_korean_vocab_variant_consistency() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # The cross-row consistency rule must appear in BOTH places so a reader
+    # of either clause alone sees it: the canonical statement lives in the
+    # pronunciation bullet (vocab section), a mirror reminder in the
+    # variant clause.
+    variant_idx = prompt.index('\U0001f501 Variant:')
+    pronunciation_idx = prompt.index('Pronunciation notation:')
+    variant_clause = prompt[variant_idx:pronunciation_idx]
+    pronunciation_clause = prompt[pronunciation_idx:]
+    # Canonical rule in the pronunciation bullet.
+    assert 'Cross-row consistency' in pronunciation_clause
+    assert 'same Sino-Korean word must use the SAME script choice in BOTH rows' in pronunciation_clause
+    assert 'SAME hanja characters' in pronunciation_clause
+    # Both directions of the bidirectional rule are stated.
+    assert 'vocab must drop the slash' in pronunciation_clause
+    assert 'NEVER let the same Sino-Korean word appear as Hangul-only on one row' in pronunciation_clause
+    # Mirror reminder inside the variant clause.
+    assert 'Cross-row consistency' in variant_clause
+    assert "vocabulary row's dual-script choice" in variant_clause
+
+
 def test_build_base_system_prompt_korean_uncertain_vocab_drops_slash() -> None:
     prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
     # The pronunciation bullet must document the Hangul-only fallback for
