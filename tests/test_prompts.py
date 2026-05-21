@@ -167,7 +167,7 @@ def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
     # preceded by a blank line so it renders as its own paragraph.
     prompt = build_base_system_prompt('Chinese', 'Korean', 'intermediate')
     for label in (
-        '\U0001f501 Variant:',
+        '\U0001f3af Translation:',
         '\U0001f4da Vocabulary:',
         '\U0001f4a1 Expression:',
         '\U0001f3ac Context:',

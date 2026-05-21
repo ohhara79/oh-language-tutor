@@ -296,10 +296,11 @@ def build_base_system_prompt(
         'own paragraph):\n'
     )
 
-    rows: list[str] = [f'  \U0001f3af Translation: <natural {target_language} translation>']
+    rows: list[str] = []
     variant_row = _variant_row(source_language)
     if variant_row is not None:
         rows.append(variant_row)
+    rows.append(f'  \U0001f3af Translation: <natural {target_language} translation>')
     rows.append(
         f'  \U0001f4da Vocabulary:\n'
         f'  - <{source_language} word [pronunciation] → {target_language}>\n'
