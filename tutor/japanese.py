@@ -17,11 +17,6 @@ def _load_table() -> dict[str, list[str]]:
 _TABLE: Final[dict[str, list[str]]] = _load_table()
 
 
-def is_japanese(language: str) -> bool:
-    """Return True when *language* names Japanese, ignoring case and whitespace."""
-    return language.strip().casefold() == 'japanese'
-
-
 def to_kyujitai_template(text: str) -> str | None:
     """Rewrite *text* into a kyūjitai template; return None if no substitution applies.
 

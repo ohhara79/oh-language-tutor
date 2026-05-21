@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tutor.japanese import _TABLE, is_japanese, relevant_kyujitai_mappings, to_kyujitai_template
+from tutor.japanese import _TABLE, relevant_kyujitai_mappings, to_kyujitai_template
 
 
 def test_table_excludes_meta_keys() -> None:
@@ -50,23 +50,6 @@ def test_to_kyujitai_returns_none_when_nothing_converts() -> None:
 
 def test_to_kyujitai_empty_string() -> None:
     assert to_kyujitai_template('') is None
-
-
-def test_is_japanese_canonical() -> None:
-    assert is_japanese('Japanese')
-
-
-def test_is_japanese_case_and_whitespace_insensitive() -> None:
-    assert is_japanese('japanese')
-    assert is_japanese('JAPANESE')
-    assert is_japanese('  Japanese  ')
-
-
-def test_is_japanese_rejects_other_languages() -> None:
-    assert not is_japanese('Korean')
-    assert not is_japanese('Chinese')
-    assert not is_japanese('Mandarin Chinese')
-    assert not is_japanese('')
 
 
 # Pinned regression guard: a curated set of well-attested Tōyō/Jōyō

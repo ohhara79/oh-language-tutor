@@ -92,8 +92,7 @@ def test_build_base_system_prompt_mentions_japanese_kyujitai() -> None:
 
 def test_build_base_system_prompt_japanese_variant_conditions() -> None:
     prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
-    # Both language clauses live on the same Variant row.
-    assert 'ALWAYS include when the source is Chinese' in prompt
+    # The Japanese clause must be present on the Variant row.
     assert 'source is Japanese' in prompt
     # The "skip any empty section" override still applies to this row.
     assert 'does not apply to this row' in prompt
@@ -167,19 +166,30 @@ def test_build_base_system_prompt_separates_sections_with_blank_lines() -> None:
     assert 'under 100 words' in prompt
 
 
-def test_build_base_system_prompt_includes_ipa_for_every_language() -> None:
+def test_build_base_system_prompt_includes_ipa_for_chinese() -> None:
     prompt = build_base_system_prompt('Mandarin Chinese', 'Korean', 'intermediate')
     # Chinese per-character pinyin ruby + IPA in brackets.
     assert '<ruby>学<rt>xué</rt>习<rt>xí</rt></ruby> / <ruby>學<rt>xué</rt>習<rt>xí</rt></ruby> [ɕɥěɕǐ]' in prompt
-    # Japanese furigana ruby + IPA in brackets.
-    assert '<ruby>受け入れる<rt>うけいれる</rt></ruby> [ɯke̞iɾe̞ɾɯ]' in prompt  # noqa: RUF001
-    # Korean Sino-Korean dual-script item: romanization + IPA in parens.
-    assert '(haksŭp, [haks͈ɯp])' in prompt  # noqa: RUF001
-    # Phonetic-script catch-all carries IPA in brackets.
-    assert '[ˈola]' in prompt  # noqa: RUF001 — IPA primary-stress mark
-    # Guard against silent reintroduction of the old "not IPA" carve-outs.
     assert 'not IPA' not in prompt
     assert 'omit the bracket' not in prompt
+
+
+def test_build_base_system_prompt_includes_ipa_for_japanese() -> None:
+    prompt = build_base_system_prompt('Japanese', 'Korean', 'intermediate')
+    # Japanese furigana ruby + IPA in brackets.
+    assert '<ruby>受け入れる<rt>うけいれる</rt></ruby> [ɯke̞iɾe̞ɾɯ]' in prompt  # noqa: RUF001
+
+
+def test_build_base_system_prompt_includes_ipa_for_korean() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # Korean Sino-Korean dual-script item: romanization + IPA in parens.
+    assert '(haksŭp, [haks͈ɯp])' in prompt  # noqa: RUF001
+
+
+def test_build_base_system_prompt_includes_ipa_for_phonetic_source() -> None:
+    prompt = build_base_system_prompt('Spanish', 'Korean', 'intermediate')
+    # Phonetic-script catch-all carries IPA in brackets even when no CJK matched.
+    assert '[ˈola]' in prompt  # noqa: RUF001 — IPA primary-stress mark
 
 
 def test_build_base_system_prompt_mentions_korean_hanja_variant() -> None:
@@ -295,6 +305,70 @@ def test_build_base_system_prompt_forbids_duplicate_dual_script() -> None:
     assert 'Hangul / 漢字' in prompt
     # The action is explicit: drop the slash and the duplicate.
     assert 'drop the slash and the duplicate' in prompt
+
+
+def test_build_base_system_prompt_english_source_omits_variant_row() -> None:
+    # When the source language isn't CJK, there is no script variant to write —
+    # the Variant row label must not appear in the rubric.
+    prompt = build_base_system_prompt('English', 'Korean', 'intermediate')
+    assert '\U0001f501 Variant:' not in prompt
+
+
+def test_build_base_system_prompt_english_source_omits_cjk_content() -> None:
+    prompt = build_base_system_prompt('English', 'Korean', 'intermediate')
+    # None of the CJK-specific ruby / dual-script vocabulary instructions
+    # should leak into the prompt for a non-CJK source.
+    for needle in ('kyūjitai', 'furigana', 'pinyin', 'hanja', '고유어', '漢字'):
+        assert needle not in prompt, f'unexpected CJK content {needle!r} for English source'
+    # And the universal dual-script backstop drops out too — it has no targets.
+    assert 'NEVER emit two halves' not in prompt
+
+
+def test_build_base_system_prompt_english_source_keeps_phonetic_catchall() -> None:
+    prompt = build_base_system_prompt('English', 'Korean', 'intermediate')
+    # The phonetic-script catch-all bullet still ships, so IPA stays available.
+    assert '[ˈola]' in prompt  # noqa: RUF001 — IPA primary-stress mark
+    assert 'hola' in prompt
+
+
+def test_build_base_system_prompt_chinese_omits_japanese_and_korean_clauses() -> None:
+    prompt = build_base_system_prompt('Chinese', 'English', 'intermediate')
+    # Per-language Variant clauses for other languages must not appear.
+    assert 'For Japanese:' not in prompt
+    assert 'For Korean:' not in prompt
+    # Japanese / Korean pronunciation bullets must not appear either.
+    assert '- For Japanese,' not in prompt
+    assert '- For Korean,' not in prompt
+    # The backstop bullet still mentions all three pairings when it's included,
+    # but the Korean-only 고유어 mention does not leak from the Korean bullet.
+    assert '고유어' not in prompt
+
+
+def test_build_base_system_prompt_japanese_omits_chinese_and_korean_clauses() -> None:
+    prompt = build_base_system_prompt('Japanese', 'English', 'intermediate')
+    assert 'For Chinese:' not in prompt
+    assert 'For Korean:' not in prompt
+    assert '- For Mandarin Chinese,' not in prompt
+    assert '- For Korean,' not in prompt
+    assert '고유어' not in prompt
+
+
+def test_build_base_system_prompt_korean_omits_chinese_and_japanese_clauses() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    assert 'For Chinese:' not in prompt
+    assert 'For Japanese:' not in prompt
+    assert '- For Mandarin Chinese,' not in prompt
+    assert '- For Japanese,' not in prompt
+    # Japanese-only furigana ruby example must not leak.
+    assert '<ruby>受け入れる<rt>うけいれる</rt></ruby>' not in prompt
+
+
+def test_build_base_system_prompt_substring_match_mandarin_chinese() -> None:
+    # The free-text "Mandarin Chinese" input must still route to the Chinese
+    # clauses through the substring matcher.
+    prompt = build_base_system_prompt('Mandarin Chinese', 'English', 'intermediate')
+    assert 'For Chinese:' in prompt
+    assert '<ruby>你<rt>nǐ</rt>好<rt>hǎo</rt></ruby>' in prompt
 
 
 def test_build_system_prompt_without_extra_equals_base() -> None:

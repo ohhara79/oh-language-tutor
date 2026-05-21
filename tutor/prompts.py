@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tutor.languages import is_chinese, is_japanese, is_korean
 from tutor.types import LineRecord
 
 # Linux execve() per-arg cap is PAGE_SIZE * 32 = 128 KiB on x86_64, and the
@@ -21,13 +22,238 @@ class PromptTooLargeError(ValueError):
     """Raised when the constructed system prompt exceeds the execve per-arg cap."""
 
 
+_VARIANT_PREAMBLE = (
+    '  \U0001f501 Variant:     <raw line rewritten in the script variant '
+    'for the source language. The "skip any empty section" rule does '
+    'not apply to this row for any language: the Variant row carries '
+    'the pronunciation ruby (pinyin for Chinese, furigana for '
+    'Japanese, hanja readings for Korean) for the full line and is '
+    'the only place that ruby appears for words outside the 2-3 '
+    'Vocabulary picks. Emit the row whenever the per-language '
+    'conditions below tell you to, even when the rewrite ends up '
+    'character-for-character identical to the source line.'
+)
+
+_VARIANT_CLAUSE_CHINESE = (
+    ' For '
+    'Chinese: the other script (simplified ↔ traditional) — ALWAYS '
+    'include when the source is Chinese, even when most characters '
+    'coincide and even when the two scripts come out '
+    'character-for-character identical (e.g. raw 你好 → variant '
+    '你好); the row is still the place where the learner reads '
+    'pinyin for the full sentence. Wrap each Han character in the '
+    'rewrite with per-character <ruby> pinyin per the Mandarin '
+    'Chinese pronunciation rule below.'
+)
+
+_VARIANT_CLAUSE_JAPANESE = (
+    ' For Japanese: when the source '
+    'is Japanese and a GROUND TRUTH block is supplied below, copy '
+    'the kyūjitai (旧字体) rewrite from it verbatim, resolving any '
+    '[A|B|C] group by picking the one form whose meaning fits the '
+    'line in context (no brackets, no pipes in the final output). '
+    'When no GROUND TRUTH block is supplied but the source line '
+    'still contains kanji, copy the original target line verbatim '
+    'instead — the kyūjitai conversion is a no-op for that line, '
+    'but the row is still the place the learner reads furigana for '
+    'the full sentence. Either way, wrap each kanji-bearing word in '
+    'the rewrite with whole-word <ruby> furigana per the Japanese '
+    'pronunciation rule below. Omit the row ONLY when the source '
+    'line has no kanji at all (pure kana / ASCII / punctuation), '
+    'since there is nothing for furigana to attach to.'
+)
+
+_VARIANT_CLAUSE_KOREAN = (
+    ' For Korean: the '
+    'direction depends on the input script. (1) If the input line '
+    'contains ANY hanja (漢字) character, rewrite the entire line in '
+    'Hangul — for each hanja, pick the correct Korean reading from '
+    'context. Multi-reading hanja (e.g. 樂 = 락/낙/요/악, 行 = 행/항, '
+    '不 = 불/부, 北 = 북/배) must be disambiguated by meaning — when '
+    'context CLEARLY selects one reading (e.g. 音樂 → 음악, 樂園 → '
+    '낙원, 行動 → 행동, 銀行 → 은행), use it; when a reading is '
+    'genuinely uncertain in context, leave that hanja in place rather '
+    'than guess — a wrong reading teaches the learner the wrong '
+    'pronunciation. (2) Otherwise (the input is pure Hangul), rewrite '
+    'the line by substituting Sino-Korean (漢字語) words with their '
+    'hanja (漢字) form. Convert a word ONLY when you are confident in '
+    'the specific hanja for that word in this context — a wrong hanja '
+    'teaches the learner the wrong form, so leave the word in Hangul '
+    'when (a) it is a proper noun (person, place, work) and context '
+    'does not pin down the spelling, (b) it is an ambiguous homophone '
+    '(e.g. 사기 = 詐欺 / 士氣 / 史記, 수도 = 首都 / 水道 / 修道) AND '
+    'the surrounding context does not pin down which sense is meant — '
+    'when context CLEARLY selects one sense (e.g. 사기를 쳤다 → 詐欺를 '
+    '쳤다, 대한민국의 수도 → 대한민국의 首都), go ahead and convert, '
+    '(c) you are not sure whether the word is '
+    'Sino-Korean or native Korean (고유어), or (d) the hanja is rare or '
+    'literary and a typical learner would not recognise it. Particles '
+    '(조사) and verb / adjective endings always stay in Hangul. In '
+    'either direction, a partially-converted line (mixed Hangul / '
+    'hanja) is PREFERRED over a wrong character — mixed script is the '
+    'traditional Korean convention. In either direction, wrap each '
+    'successfully-converted Sino-Korean span in the final rewrite in '
+    'per-character <ruby> whose <rt> values are the matching characters '
+    'from the INPUT LINE — one <rt> per character inside one outer '
+    '<ruby> per Sino-Korean word (one hanja = one Hangul syllable, so '
+    'the alignment is unambiguous). When the input was pure Hangul and '
+    'the variant added hanja, each converted hanja therefore carries '
+    'the input Hangul as its ruby; when the input contained hanja and '
+    'the variant rewrote those words in Hangul, each converted Hangul '
+    'syllable carries the input hanja as its ruby. NEVER wrap spans '
+    'that already match the input line (because you kept the input '
+    'form when the conversion was uncertain), particles (조사), verb / '
+    'adjective endings, or native Korean (고유어) words — they would '
+    'add no information beyond the input, and a wrong ruby teaches the '
+    'learner the wrong form just like a wrong rewrite does. Examples: '
+    'input 공부합니다 → variant '
+    '<ruby>工<rt>공</rt>夫<rt>부</rt></ruby>합니다 (Hangul input → '
+    'variant carries hanja in the line with Hangul ruby from the input '
+    'above each hanja); input 工夫합니다 → variant '
+    '<ruby>공<rt>工</rt>부<rt>夫</rt></ruby>합니다 (hanja input → '
+    'variant carries Hangul in the line with hanja ruby from the input '
+    'above each syllable). Omit the entire row only when no '
+    'word in the line can be converted with confidence. The "skip any '
+    'empty section" rule does not apply to this row. Omit ONLY when '
+    'none of these conditions hold.'
+)
+
+
+def _variant_row(source_language: str) -> str | None:
+    """Return the full Variant row line for *source_language*, or None to omit it."""
+    if is_chinese(source_language):
+        clause = _VARIANT_CLAUSE_CHINESE
+    elif is_japanese(source_language):
+        clause = _VARIANT_CLAUSE_JAPANESE
+    elif is_korean(source_language):
+        clause = _VARIANT_CLAUSE_KOREAN
+    else:
+        return None
+    return _VARIANT_PREAMBLE + clause + '>'
+
+
+_PRONUNCIATION_HEADER = (
+    'Pronunciation notation:\n'
+    '- Always include an IPA transcription in square brackets, in addition\n'
+    '  to any language-specific romanization or kana below.\n'
+    '- For languages where spelling and sound diverge\n'
+    '  (English, French, Russian, Arabic, Thai, …), IPA alone suffices,\n'
+    '  e.g. accept [əkˈsɛpt] → 받아들이다.\n'  # noqa: RUF001 — U+02C8 is the IPA primary-stress mark
+)
+
+_PRONUNCIATION_BULLET_JAPANESE = (
+    '- For Japanese, wrap every kanji-bearing Japanese form anywhere in '
+    'the explanation — Vocabulary headwords, the Variant rewrite, and '
+    'any Japanese word or phrase quoted inside the Expression or Context '
+    'rows — in a whole-word <ruby> span with the reading inside <rt>, '
+    'e.g. <ruby>受け入れる<rt>うけいれる</rt></ruby>. One <rt> per <ruby> '
+    'span, covering the whole word; do not split kana mora-by-mora '
+    'across kanji. Pure-kana words (e.g. ありがとう) and ASCII tokens '
+    'are left unwrapped. For the Vocabulary row, show both forms '
+    'separated by " / " (shinjitai first, kyūjitai second) when any '
+    'kanji in the word has a kyūjitai variant per the GROUND TRUTH '
+    'mappings below — those mappings are the source of truth, not your '
+    'recall. IPA goes in brackets after the word(s), e.g. '
+    '<ruby>学校<rt>がっこう</rt></ruby> / '
+    '<ruby>學校<rt>がっこう</rt></ruby> [ɡakkoː] → 학교.\n'  # noqa: RUF001 — IPA script-g and length mark
+    '  Drop the slash and second form when no kanji in the word has a '
+    'kyūjitai variant per the GROUND TRUTH mappings, e.g. '
+    '<ruby>受け入れる<rt>うけいれる</rt></ruby> [ɯke̞iɾe̞ɾɯ] → '  # noqa: RUF001
+    '받아들이다.\n'
+)
+
+_PRONUNCIATION_BULLET_CHINESE = (
+    '- For Mandarin Chinese, wrap every Han-character span anywhere in '
+    'the explanation — Vocabulary headwords, the Variant rewrite, and '
+    'any Chinese word or phrase quoted inside the Expression or Context '
+    'rows — in a <ruby> span with one <rt> per character, e.g. '
+    '<ruby>你<rt>nǐ</rt>好<rt>hǎo</rt></ruby>. Each Han character carries '
+    'its own pinyin syllable (one Han character = one syllable); '
+    'preserve underlying tone marks (do not apply tone sandhi in the '
+    '<rt>). Non-Han characters (Latin letters, digits, punctuation) sit '
+    'outside <ruby> spans. Erhua (儿化) collapses to one <rt> over the '
+    'two-character span, e.g. <ruby>哪儿<rt>nǎr</rt></ruby>. For the '
+    'Vocabulary row, show both scripts separated by " / " (raw-script '
+    'first), with IPA in brackets after the word(s), e.g. '
+    '<ruby>学<rt>xué</rt>习<rt>xí</rt></ruby> / '
+    '<ruby>學<rt>xué</rt>習<rt>xí</rt></ruby> [ɕɥěɕǐ] → 학습.\n'
+    '  Drop the slash and second form when the two scripts are identical '
+    'for that word, e.g. <ruby>你<rt>nǐ</rt>好<rt>hǎo</rt></ruby> '
+    '[ni˨˩˦ xɑʊ̯˨˩˦] → 안녕하세요.\n'  # noqa: RUF001
+)
+
+_PRONUNCIATION_BULLET_KOREAN = (
+    '- For Korean, show both scripts separated by " / " ONLY when the '
+    'word is Sino-Korean (漢字語) AND you are confident in the '
+    'specific hanja form '
+    "(same don'ts as the Variant row above: proper nouns without "
+    'pinned context, ambiguous homophones, native-vs-Sino-Korean '
+    'uncertain, rare / literary hanja). The form that appears in the '
+    'INPUT LINE goes first — if the source line contains the word in '
+    'hanja, write hanja first; if it contains the word in Hangul, '
+    'write Hangul first.\n'
+    '  McCune-Reischauer romanization and IPA go in the same parens, '
+    'comma-separated, e.g. 학습 / 學習 (haksŭp, [haks͈ɯp]) → study '  # noqa: RUF001
+    '(when the input line had 학습 in Hangul), and 工夫 / 공부 '
+    '(kongbu, [koŋbu]) → study (when the input line had 工夫 in hanja).\n'
+    '  Drop the slash and second form when the word is native Korean '
+    '(고유어), OR when the word is Sino-Korean but the specific hanja '
+    'is uncertain — Hangul is phonetic so IPA in brackets suffices, '
+    'e.g. 아름답다 [a̠ɾɯmda̠p̚t͈a̠] → beautiful (native), and '  # noqa: RUF001
+    '사기 [sʌːɡi] → fraud (Sino-Korean but hanja unclear from context).\n'  # noqa: RUF001
+)
+
+_DUAL_SCRIPT_BACKSTOP_BULLET = (
+    '- Critical for every dual-script vocab item (Japanese 新字体 / '
+    '旧字体, Mandarin simplified / traditional, Korean Hangul / 漢字): '
+    'NEVER emit two halves that are character-for-character identical. '
+    'If the second form would equal the first exactly, drop the slash '
+    'and the duplicate and emit only the single form. For Japanese and '
+    'Chinese, this means comparing the inner characters of the two '
+    '<ruby> spans — if they match, keep only one <ruby> span and drop '
+    'the slash. This is a hard rule that reinforces the per-language '
+    '"drop the slash" conditions above and catches any case they miss.\n'
+)
+
+_PRONUNCIATION_PHONETIC_FALLBACK = (
+    '- For source languages whose script is already phonetic\n'
+    '  (Spanish, Italian, Indonesian, …), still include the IPA\n'
+    '  in brackets, e.g. hola [ˈola] → 안녕.\n'  # noqa: RUF001
+)
+
+
+def _pronunciation_block(source_language: str) -> str:
+    """Assemble the Pronunciation notation block for *source_language*."""
+    parts: list[str] = [_PRONUNCIATION_HEADER]
+    matched_cjk = False
+    if is_japanese(source_language):
+        parts.append(_PRONUNCIATION_BULLET_JAPANESE)
+        matched_cjk = True
+    if is_chinese(source_language):
+        parts.append(_PRONUNCIATION_BULLET_CHINESE)
+        matched_cjk = True
+    if is_korean(source_language):
+        parts.append(_PRONUNCIATION_BULLET_KOREAN)
+        matched_cjk = True
+    if matched_cjk:
+        parts.append(_DUAL_SCRIPT_BACKSTOP_BULLET)
+    parts.append(_PRONUNCIATION_PHONETIC_FALLBACK)
+    return ''.join(parts)
+
+
 def build_base_system_prompt(
     source_language: str,
     target_language: str,
     level: str,
 ) -> str:
-    """Build the audience/format half of the system prompt."""
-    return (
+    """Build the audience/format half of the system prompt.
+
+    Only the language-specific Variant and Pronunciation sections that
+    match *source_language* are included; non-CJK sources omit the
+    Variant row entirely and skip every CJK-specific pronunciation
+    bullet.
+    """
+    intro = (
         f'You are a private language tutor helping a native {target_language} '
         f'speaker learn {source_language}. '
         f"The learner's level is {level}.\n"
@@ -40,170 +266,21 @@ def build_base_system_prompt(
         'Explanation structure (skip any empty section, stay under 100 words; '
         'separate each section below with a blank line so each renders as its '
         'own paragraph):\n'
-        '\n'
-        f'  \U0001f3af Translation: <natural {target_language} translation>\n'
-        '\n'
-        '  \U0001f501 Variant:     <raw line rewritten in the script variant '
-        'for the source language. The "skip any empty section" rule does '
-        'not apply to this row for any language: the Variant row carries '
-        'the pronunciation ruby (pinyin for Chinese, furigana for '
-        'Japanese, hanja readings for Korean) for the full line and is '
-        'the only place that ruby appears for words outside the 2-3 '
-        'Vocabulary picks. Emit the row whenever the per-language '
-        'conditions below tell you to, even when the rewrite ends up '
-        'character-for-character identical to the source line. For '
-        'Chinese: the other script (simplified ↔ traditional) — ALWAYS '
-        'include when the source is Chinese, even when most characters '
-        'coincide and even when the two scripts come out '
-        'character-for-character identical (e.g. raw 你好 → variant '
-        '你好); the row is still the place where the learner reads '
-        'pinyin for the full sentence. Wrap each Han character in the '
-        'rewrite with per-character <ruby> pinyin per the Mandarin '
-        'Chinese pronunciation rule below. For Japanese: when the source '
-        'is Japanese and a GROUND TRUTH block is supplied below, copy '
-        'the kyūjitai (旧字体) rewrite from it verbatim, resolving any '
-        '[A|B|C] group by picking the one form whose meaning fits the '
-        'line in context (no brackets, no pipes in the final output). '
-        'When no GROUND TRUTH block is supplied but the source line '
-        'still contains kanji, copy the original target line verbatim '
-        'instead — the kyūjitai conversion is a no-op for that line, '
-        'but the row is still the place the learner reads furigana for '
-        'the full sentence. Either way, wrap each kanji-bearing word in '
-        'the rewrite with whole-word <ruby> furigana per the Japanese '
-        'pronunciation rule below. Omit the row ONLY when the source '
-        'line has no kanji at all (pure kana / ASCII / punctuation), '
-        'since there is nothing for furigana to attach to. For Korean: the '
-        'direction depends on the input script. (1) If the input line '
-        'contains ANY hanja (漢字) character, rewrite the entire line in '
-        'Hangul — for each hanja, pick the correct Korean reading from '
-        'context. Multi-reading hanja (e.g. 樂 = 락/낙/요/악, 行 = 행/항, '
-        '不 = 불/부, 北 = 북/배) must be disambiguated by meaning — when '
-        'context CLEARLY selects one reading (e.g. 音樂 → 음악, 樂園 → '
-        '낙원, 行動 → 행동, 銀行 → 은행), use it; when a reading is '
-        'genuinely uncertain in context, leave that hanja in place rather '
-        'than guess — a wrong reading teaches the learner the wrong '
-        'pronunciation. (2) Otherwise (the input is pure Hangul), rewrite '
-        'the line by substituting Sino-Korean (漢字語) words with their '
-        'hanja (漢字) form. Convert a word ONLY when you are confident in '
-        'the specific hanja for that word in this context — a wrong hanja '
-        'teaches the learner the wrong form, so leave the word in Hangul '
-        'when (a) it is a proper noun (person, place, work) and context '
-        'does not pin down the spelling, (b) it is an ambiguous homophone '
-        '(e.g. 사기 = 詐欺 / 士氣 / 史記, 수도 = 首都 / 水道 / 修道) AND '
-        'the surrounding context does not pin down which sense is meant — '
-        'when context CLEARLY selects one sense (e.g. 사기를 쳤다 → 詐欺를 '
-        '쳤다, 대한민국의 수도 → 대한민국의 首都), go ahead and convert, '
-        '(c) you are not sure whether the word is '
-        'Sino-Korean or native Korean (고유어), or (d) the hanja is rare or '
-        'literary and a typical learner would not recognise it. Particles '
-        '(조사) and verb / adjective endings always stay in Hangul. In '
-        'either direction, a partially-converted line (mixed Hangul / '
-        'hanja) is PREFERRED over a wrong character — mixed script is the '
-        'traditional Korean convention. In either direction, wrap each '
-        'successfully-converted Sino-Korean span in the final rewrite in '
-        'per-character <ruby> whose <rt> values are the matching characters '
-        'from the INPUT LINE — one <rt> per character inside one outer '
-        '<ruby> per Sino-Korean word (one hanja = one Hangul syllable, so '
-        'the alignment is unambiguous). When the input was pure Hangul and '
-        'the variant added hanja, each converted hanja therefore carries '
-        'the input Hangul as its ruby; when the input contained hanja and '
-        'the variant rewrote those words in Hangul, each converted Hangul '
-        'syllable carries the input hanja as its ruby. NEVER wrap spans '
-        'that already match the input line (because you kept the input '
-        'form when the conversion was uncertain), particles (조사), verb / '
-        'adjective endings, or native Korean (고유어) words — they would '
-        'add no information beyond the input, and a wrong ruby teaches the '
-        'learner the wrong form just like a wrong rewrite does. Examples: '
-        'input 공부합니다 → variant '
-        '<ruby>工<rt>공</rt>夫<rt>부</rt></ruby>합니다 (Hangul input → '
-        'variant carries hanja in the line with Hangul ruby from the input '
-        'above each hanja); input 工夫합니다 → variant '
-        '<ruby>공<rt>工</rt>부<rt>夫</rt></ruby>합니다 (hanja input → '
-        'variant carries Hangul in the line with hanja ruby from the input '
-        'above each syllable). Omit the entire row only when no '
-        'word in the line can be converted with confidence. The "skip any '
-        'empty section" rule does not apply to this row. Omit ONLY when '
-        'none of these conditions hold.>\n'
-        '\n'
-        f'  \U0001f4da Vocabulary: <2-3 items, {source_language} word [pronunciation] → {target_language}>\n'
-        '\n'
-        '  \U0001f4a1 Expression: <one idiom/slang/grammar pattern, explained in '
-        f'{target_language}>\n'
-        '\n'
+    )
+
+    rows: list[str] = [f'  \U0001f3af Translation: <natural {target_language} translation>']
+    variant_row = _variant_row(source_language)
+    if variant_row is not None:
+        rows.append(variant_row)
+    rows.append(f'  \U0001f4da Vocabulary: <2-3 items, {source_language} word [pronunciation] → {target_language}>')
+    rows.append(f'  \U0001f4a1 Expression: <one idiom/slang/grammar pattern, explained in {target_language}>')
+    rows.append(
         '  \U0001f3ac Context:    <one sentence on what the speaker means in THIS '
-        'moment, referencing the surrounding context lines>\n'
-        '\n'
-        'Pronunciation notation:\n'
-        '- Always include an IPA transcription in square brackets, in addition\n'
-        '  to any language-specific romanization or kana below.\n'
-        '- For languages where spelling and sound diverge\n'
-        '  (English, French, Russian, Arabic, Thai, …), IPA alone suffices,\n'
-        '  e.g. accept [əkˈsɛpt] → 받아들이다.\n'  # noqa: RUF001 — U+02C8 is the IPA primary-stress mark
-        '- For Japanese, wrap every kanji-bearing Japanese form anywhere in '
-        'the explanation — Vocabulary headwords, the Variant rewrite, and '
-        'any Japanese word or phrase quoted inside the Expression or Context '
-        'rows — in a whole-word <ruby> span with the reading inside <rt>, '
-        'e.g. <ruby>受け入れる<rt>うけいれる</rt></ruby>. One <rt> per <ruby> '
-        'span, covering the whole word; do not split kana mora-by-mora '
-        'across kanji. Pure-kana words (e.g. ありがとう) and ASCII tokens '
-        'are left unwrapped. For the Vocabulary row, show both forms '
-        'separated by " / " (shinjitai first, kyūjitai second) when any '
-        'kanji in the word has a kyūjitai variant per the GROUND TRUTH '
-        'mappings below — those mappings are the source of truth, not your '
-        'recall. IPA goes in brackets after the word(s), e.g. '
-        '<ruby>学校<rt>がっこう</rt></ruby> / '
-        '<ruby>學校<rt>がっこう</rt></ruby> [ɡakkoː] → 학교.\n'  # noqa: RUF001 — IPA script-g and length mark
-        '  Drop the slash and second form when no kanji in the word has a '
-        'kyūjitai variant per the GROUND TRUTH mappings, e.g. '
-        '<ruby>受け入れる<rt>うけいれる</rt></ruby> [ɯke̞iɾe̞ɾɯ] → '  # noqa: RUF001
-        '받아들이다.\n'
-        '- For Mandarin Chinese, wrap every Han-character span anywhere in '
-        'the explanation — Vocabulary headwords, the Variant rewrite, and '
-        'any Chinese word or phrase quoted inside the Expression or Context '
-        'rows — in a <ruby> span with one <rt> per character, e.g. '
-        '<ruby>你<rt>nǐ</rt>好<rt>hǎo</rt></ruby>. Each Han character carries '
-        'its own pinyin syllable (one Han character = one syllable); '
-        'preserve underlying tone marks (do not apply tone sandhi in the '
-        '<rt>). Non-Han characters (Latin letters, digits, punctuation) sit '
-        'outside <ruby> spans. Erhua (儿化) collapses to one <rt> over the '
-        'two-character span, e.g. <ruby>哪儿<rt>nǎr</rt></ruby>. For the '
-        'Vocabulary row, show both scripts separated by " / " (raw-script '
-        'first), with IPA in brackets after the word(s), e.g. '
-        '<ruby>学<rt>xué</rt>习<rt>xí</rt></ruby> / '
-        '<ruby>學<rt>xué</rt>習<rt>xí</rt></ruby> [ɕɥěɕǐ] → 학습.\n'
-        '  Drop the slash and second form when the two scripts are identical '
-        'for that word, e.g. <ruby>你<rt>nǐ</rt>好<rt>hǎo</rt></ruby> '
-        '[ni˨˩˦ xɑʊ̯˨˩˦] → 안녕하세요.\n'  # noqa: RUF001
-        '- For Korean, show both scripts separated by " / " ONLY when the '
-        'word is Sino-Korean (漢字語) AND you are confident in the '
-        'specific hanja form '
-        "(same don'ts as the Variant row above: proper nouns without "
-        'pinned context, ambiguous homophones, native-vs-Sino-Korean '
-        'uncertain, rare / literary hanja). The form that appears in the '
-        'INPUT LINE goes first — if the source line contains the word in '
-        'hanja, write hanja first; if it contains the word in Hangul, '
-        'write Hangul first.\n'
-        '  McCune-Reischauer romanization and IPA go in the same parens, '
-        'comma-separated, e.g. 학습 / 學習 (haksŭp, [haks͈ɯp]) → study '  # noqa: RUF001
-        '(when the input line had 학습 in Hangul), and 工夫 / 공부 '
-        '(kongbu, [koŋbu]) → study (when the input line had 工夫 in hanja).\n'
-        '  Drop the slash and second form when the word is native Korean '
-        '(고유어), OR when the word is Sino-Korean but the specific hanja '
-        'is uncertain — Hangul is phonetic so IPA in brackets suffices, '
-        'e.g. 아름답다 [a̠ɾɯmda̠p̚t͈a̠] → beautiful (native), and '  # noqa: RUF001
-        '사기 [sʌːɡi] → fraud (Sino-Korean but hanja unclear from context).\n'  # noqa: RUF001
-        '- Critical for every dual-script vocab item (Japanese 新字体 / '
-        '旧字体, Mandarin simplified / traditional, Korean Hangul / 漢字): '
-        'NEVER emit two halves that are character-for-character identical. '
-        'If the second form would equal the first exactly, drop the slash '
-        'and the duplicate and emit only the single form. For Japanese and '
-        'Chinese, this means comparing the inner characters of the two '
-        '<ruby> spans — if they match, keep only one <ruby> span and drop '
-        'the slash. This is a hard rule that reinforces the per-language '
-        '"drop the slash" conditions above and catches any case they miss.\n'
-        '- For source languages whose script is already phonetic\n'
-        '  (Spanish, Italian, Indonesian, …), still include the IPA\n'
-        '  in brackets, e.g. hola [ˈola] → 안녕.\n'  # noqa: RUF001
+        'moment, referencing the surrounding context lines>'
+    )
+    rubric = '\n' + '\n\n'.join(rows) + '\n\n'
+
+    level_guidance = (
         '\n'
         'Level guidance:\n'
         f'- beginner:     write almost everything in {target_language}; simple '
@@ -213,6 +290,8 @@ def build_base_system_prompt(
         f'- advanced:     explain in plain {source_language}; only use '
         f'{target_language} for subtle points.\n'
     )
+
+    return intro + rubric + _pronunciation_block(source_language) + level_guidance
 
 
 def read_extras_system_prompt(path: str) -> str:
