@@ -284,6 +284,27 @@ def test_build_base_system_prompt_korean_variant_ruby_worked_examples() -> None:
     assert ('input 工夫합니다 → variant <ruby>工<rt>공</rt>夫<rt>부</rt></ruby>합니다') in prompt
 
 
+def test_build_base_system_prompt_korean_variant_forbids_half_converted_word() -> None:
+    prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
+    # The new rules live inside the Variant clause, not the pronunciation bullet.
+    variant_idx = prompt.index('\U0001f501 Variant:')
+    pronunciation_idx = prompt.index('Pronunciation notation:')
+    variant_clause = prompt[variant_idx:pronunciation_idx]
+    # Structural invariant: Hanja count == <rt> count, alternate one-to-one,
+    # no consecutive <rt>s, no <rt> without a Hanja base before it.
+    assert 'alternate one-to-one' in variant_clause
+    assert 'Hanja count MUST equal the <rt> count' in variant_clause
+    assert 'NEVER emit two consecutive <rt>s' in variant_clause
+    # Per-word atomicity: convert the whole Sino-Korean word or none of it.
+    assert 'converted atomically' in variant_clause
+    assert 'every syllable of the word' in variant_clause
+    assert 'NEVER convert only some syllables of a multi-syllable Sino-Korean word' in variant_clause
+    # Both negative worked examples must appear verbatim so the model has
+    # explicit counter-templates for the two reported failure shapes.
+    assert 'NEVER <ruby>地<rt>지</rt></ruby>갑' in variant_clause
+    assert 'NEVER <ruby>帽<rt>모</rt><rt>자</rt></ruby>' in variant_clause
+
+
 def test_build_base_system_prompt_korean_uncertain_vocab_drops_slash() -> None:
     prompt = build_base_system_prompt('Korean', 'English', 'intermediate')
     # The pronunciation bullet must document the Hangul-only fallback for
