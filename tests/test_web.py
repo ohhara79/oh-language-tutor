@@ -588,6 +588,30 @@ async def test_post_explain_rejects_empty_audience(tmp_path: Path):
     assert r.status_code == 400
 
 
+async def test_post_explain_rejects_language_mismatch(
+    tmp_path: Path,
+    fake_client_factory: FakeClaudeSDKClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ctx, _ = _build_ctx(tmp_path)
+    ctx.writing_session.tutor_store.append(TutorEntry(raw='안녕하세요', id='u-mm'))
+    # Trip-wire: the explain pipeline must not reach the Claude client.
+    monkeypatch.setattr(web_mod, 'ClaudeSDKClient', fake_client_factory)
+
+    async with _client(ctx) as client:
+        r = await client.post(
+            _dir_url(ctx, '/commands/explain'),
+            data={'entry_id': 'u-mm', **_AUDIENCE_FORM},  # source_language='English'
+        )
+    assert r.status_code == 400
+    assert 'Korean' in r.text
+    assert 'English' in r.text
+    # Entry stays unexplained, and no Claude session was ever constructed.
+    [stored] = [e for e in ctx.writing_session.tutor_store.load() if e.id == 'u-mm']
+    assert stored.explanation is None
+    assert fake_client_factory.constructed == []
+
+
 async def test_post_explain_already_explained_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -714,7 +738,7 @@ async def test_post_explain_non_japanese_omits_kyujitai_ground_truth(
     async with _client(ctx) as client:
         r = await client.post(
             _dir_url(ctx, '/commands/explain'),
-            data={'entry_id': 'u-ko', **_AUDIENCE_FORM, 'source_language': 'Korean'},
+            data={'entry_id': 'u-ko', **_AUDIENCE_FORM, 'source_language': 'Chinese'},
         )
         assert r.status_code == 200
         await ctx.writing_session.sink.flush_pending_writes()

@@ -29,7 +29,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from tutor.core import stdin_loop
 from tutor.japanese import relevant_kyujitai_mappings, to_kyujitai_template
-from tutor.languages import is_japanese
+from tutor.languages import detect_language_mismatch, is_japanese
 from tutor.markdown_util import render_markdown
 from tutor.prompts import (
     EXPLAIN_CONTEXT_K,
@@ -539,6 +539,10 @@ def build_app(ctx: WebContext) -> FastAPI:
         target = entries[idx]
         if target.explanation is not None:
             return HTMLResponse(content=session.sink.render_line(target, active=True))
+        mismatch_msg = detect_language_mismatch(source_language, target.raw)
+        if mismatch_msg is not None:
+            session.sink.on_error(mismatch_msg)
+            raise HTTPException(status_code=400, detail=mismatch_msg)
         if is_japanese(source_language):
             kyujitai_variant = to_kyujitai_template(target.raw)
             kyujitai_mappings = relevant_kyujitai_mappings(target.raw)
