@@ -12,7 +12,7 @@ header {
     position: relative;
     border-bottom: 1px solid #888;
     margin: 0 -1rem 1rem;
-    padding: 0.4rem 1rem;
+    padding: 0.2rem 1rem;
 }
 header h1 { margin: 0; font-size: 1.2rem; }
 
@@ -46,9 +46,9 @@ body:not(.view-picker) header {
 .view-dir-label:focus-visible { outline: 2px solid #8ab; outline-offset: 2px; }
 
 .menu-btn {
-    padding: 0.15rem 0.45rem;
+    padding: 0 0.4rem;
     min-height: 0;
-    font-size: 1.05rem;
+    font-size: 1rem;
     line-height: 1;
 }
 
