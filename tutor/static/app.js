@@ -30,7 +30,7 @@
         targetLanguage: 'Korean',
         level: 'intermediate',
         onlyExplained: '0',
-        fontBrightness: '100',
+        pageOpacity: '100',
     };
     const CFG_FIELDS = [
         {key: 'sourceLanguage', cls: 'cfg-source-language', form: 'source_language'},
@@ -184,19 +184,19 @@
         jumpScrollTo(v);
     });
 
-    const brightnessSlider = document.getElementById('brightness-slider');
-    const brightnessCurrent = document.getElementById('brightness-current');
-    function applyBrightness(pct) {
+    const opacitySlider = document.getElementById('opacity-slider');
+    const opacityCurrent = document.getElementById('opacity-current');
+    function applyOpacity(pct) {
         const v = Math.max(30, Math.min(100, Number(pct) || 100));
-        body.style.setProperty('--font-brightness', String(v / 100));
-        brightnessCurrent.textContent = String(v);
-        brightnessSlider.value = String(v);
+        body.style.setProperty('--page-opacity', String(v / 100));
+        opacityCurrent.textContent = String(v);
+        opacitySlider.value = String(v);
     }
-    applyBrightness(cfgGet('fontBrightness'));
-    brightnessSlider.addEventListener('input', () => {
-        const v = brightnessSlider.value;
-        cfgSet('fontBrightness', v);
-        applyBrightness(v);
+    applyOpacity(cfgGet('pageOpacity'));
+    opacitySlider.addEventListener('input', () => {
+        const v = opacitySlider.value;
+        cfgSet('pageOpacity', v);
+        applyOpacity(v);
     });
 
     function current() { return stack[stack.length - 1]; }
