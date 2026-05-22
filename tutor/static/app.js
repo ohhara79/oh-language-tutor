@@ -190,16 +190,16 @@
     const opacityMinus = document.getElementById('opacity-minus');
     const opacityPlus = document.getElementById('opacity-plus');
     function applyOpacity(pct) {
-        const v = Math.max(30, Math.min(100, Number(pct) || 100));
+        const v = Math.max(10, Math.min(100, Number(pct) || 100));
         body.style.setProperty('--page-opacity', String(v / 100));
         opacityCurrent.textContent = String(v);
         opacitySlider.value = String(v);
-        opacityMinus.disabled = v <= 30;
+        opacityMinus.disabled = v <= 10;
         opacityPlus.disabled = v >= 100;
     }
     function stepOpacity(delta) {
         const cur = Number(opacitySlider.value) || 100;
-        const next = String(Math.max(30, Math.min(100, cur + delta)));
+        const next = String(Math.max(10, Math.min(100, cur + delta)));
         cfgSet('pageOpacity', next);
         applyOpacity(next);
     }
