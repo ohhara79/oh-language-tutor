@@ -203,7 +203,7 @@ body { opacity: var(--page-opacity, 1); }
 
 .line {
     border-top: 1px solid #ddd;
-    padding: 0.25rem 0;
+    padding: 0;
     scroll-margin-top: 4.5rem;
 }
 .line:first-child { border-top: none; }
@@ -217,7 +217,7 @@ body { opacity: var(--page-opacity, 1); }
     text-align: left;
     background: transparent;
     border: none;
-    padding: 0.75rem 0.5rem;
+    padding: 0.25rem 0.5rem;
     margin: 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: calc(1.5rem * var(--content-scale, 1));
