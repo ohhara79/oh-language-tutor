@@ -30,6 +30,7 @@
         targetLanguage: 'Korean',
         level: 'intermediate',
         onlyExplained: '0',
+        fontBrightness: '100',
     };
     const CFG_FIELDS = [
         {key: 'sourceLanguage', cls: 'cfg-source-language', form: 'source_language'},
@@ -181,6 +182,21 @@
         const v = Number(jumpSlider.value);
         jumpCurrent.textContent = String(v);
         jumpScrollTo(v);
+    });
+
+    const brightnessSlider = document.getElementById('brightness-slider');
+    const brightnessCurrent = document.getElementById('brightness-current');
+    function applyBrightness(pct) {
+        const v = Math.max(30, Math.min(100, Number(pct) || 100));
+        body.style.setProperty('--font-brightness', String(v / 100));
+        brightnessCurrent.textContent = String(v);
+        brightnessSlider.value = String(v);
+    }
+    applyBrightness(cfgGet('fontBrightness'));
+    brightnessSlider.addEventListener('input', () => {
+        const v = brightnessSlider.value;
+        cfgSet('fontBrightness', v);
+        applyBrightness(v);
     });
 
     function current() { return stack[stack.length - 1]; }

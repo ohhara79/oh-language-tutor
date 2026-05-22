@@ -86,6 +86,17 @@ body:not(.view-picker) header {
 .menu-jump-label { font-size: 0.9rem; }
 #jump-slider { width: 100%; min-height: 32px; }
 
+.menu-brightness {
+    padding: 0.375rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.menu-brightness-label { font-size: 0.9rem; }
+#brightness-slider { width: 100%; min-height: 32px; }
+
+body { opacity: var(--font-brightness, 1); }
+
 .menu-cfg {
     padding: 0.375rem 0.75rem;
     display: flex;
