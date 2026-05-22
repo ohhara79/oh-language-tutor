@@ -31,6 +31,7 @@
         level: 'intermediate',
         onlyExplained: '0',
         pageOpacity: '100',
+        fontSize: '100',
     };
     const CFG_FIELDS = [
         {key: 'sourceLanguage', cls: 'cfg-source-language', form: 'source_language'},
@@ -197,6 +198,21 @@
         const v = opacitySlider.value;
         cfgSet('pageOpacity', v);
         applyOpacity(v);
+    });
+
+    const fontSizeSlider = document.getElementById('fontsize-slider');
+    const fontSizeCurrent = document.getElementById('fontsize-current');
+    function applyFontSize(pct) {
+        const v = Math.max(50, Math.min(300, Number(pct) || 100));
+        document.documentElement.style.setProperty('--content-scale', String(v / 100));
+        fontSizeCurrent.textContent = String(v);
+        fontSizeSlider.value = String(v);
+    }
+    applyFontSize(cfgGet('fontSize'));
+    fontSizeSlider.addEventListener('input', () => {
+        const v = fontSizeSlider.value;
+        cfgSet('fontSize', v);
+        applyFontSize(v);
     });
 
     function current() { return stack[stack.length - 1]; }
