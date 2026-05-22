@@ -187,11 +187,21 @@
 
     const opacitySlider = document.getElementById('opacity-slider');
     const opacityCurrent = document.getElementById('opacity-current');
+    const opacityMinus = document.getElementById('opacity-minus');
+    const opacityPlus = document.getElementById('opacity-plus');
     function applyOpacity(pct) {
         const v = Math.max(30, Math.min(100, Number(pct) || 100));
         body.style.setProperty('--page-opacity', String(v / 100));
         opacityCurrent.textContent = String(v);
         opacitySlider.value = String(v);
+        opacityMinus.disabled = v <= 30;
+        opacityPlus.disabled = v >= 100;
+    }
+    function stepOpacity(delta) {
+        const cur = Number(opacitySlider.value) || 100;
+        const next = String(Math.max(30, Math.min(100, cur + delta)));
+        cfgSet('pageOpacity', next);
+        applyOpacity(next);
     }
     applyOpacity(cfgGet('pageOpacity'));
     opacitySlider.addEventListener('input', () => {
@@ -199,14 +209,26 @@
         cfgSet('pageOpacity', v);
         applyOpacity(v);
     });
+    opacityMinus.addEventListener('click', () => stepOpacity(-10));
+    opacityPlus.addEventListener('click', () => stepOpacity(10));
 
     const fontSizeSlider = document.getElementById('fontsize-slider');
     const fontSizeCurrent = document.getElementById('fontsize-current');
+    const fontSizeMinus = document.getElementById('fontsize-minus');
+    const fontSizePlus = document.getElementById('fontsize-plus');
     function applyFontSize(pct) {
         const v = Math.max(50, Math.min(300, Number(pct) || 100));
         document.documentElement.style.setProperty('--content-scale', String(v / 100));
         fontSizeCurrent.textContent = String(v);
         fontSizeSlider.value = String(v);
+        fontSizeMinus.disabled = v <= 50;
+        fontSizePlus.disabled = v >= 300;
+    }
+    function stepFontSize(delta) {
+        const cur = Number(fontSizeSlider.value) || 100;
+        const next = String(Math.max(50, Math.min(300, cur + delta)));
+        cfgSet('fontSize', next);
+        applyFontSize(next);
     }
     applyFontSize(cfgGet('fontSize'));
     fontSizeSlider.addEventListener('input', () => {
@@ -214,6 +236,8 @@
         cfgSet('fontSize', v);
         applyFontSize(v);
     });
+    fontSizeMinus.addEventListener('click', () => stepFontSize(-10));
+    fontSizePlus.addEventListener('click', () => stepFontSize(10));
 
     function current() { return stack[stack.length - 1]; }
 

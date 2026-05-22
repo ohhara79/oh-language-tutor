@@ -37,18 +37,30 @@
         <div class="menu-opacity-label">
           Opacity <span id="opacity-current">100</span>%
         </div>
-        <input type="range" id="opacity-slider"
-               min="30" max="100" step="5" value="100"
-               aria-label="Page opacity">
+        <div class="slider-row">
+          <button type="button" class="slider-step" id="opacity-minus"
+                  aria-label="Decrease opacity by 10%">−</button>
+          <input type="range" id="opacity-slider"
+                 min="30" max="100" step="5" value="100"
+                 aria-label="Page opacity">
+          <button type="button" class="slider-step" id="opacity-plus"
+                  aria-label="Increase opacity by 10%">+</button>
+        </div>
       </div>
       <hr class="menu-sep">
       <div class="menu-fontsize">
         <div class="menu-fontsize-label">
           Font Size <span id="fontsize-current">100</span>%
         </div>
-        <input type="range" id="fontsize-slider"
-               min="50" max="300" step="10" value="100"
-               aria-label="Content font size">
+        <div class="slider-row">
+          <button type="button" class="slider-step" id="fontsize-minus"
+                  aria-label="Decrease font size by 10%">−</button>
+          <input type="range" id="fontsize-slider"
+                 min="50" max="300" step="10" value="100"
+                 aria-label="Content font size">
+          <button type="button" class="slider-step" id="fontsize-plus"
+                  aria-label="Increase font size by 10%">+</button>
+        </div>
       </div>
       <hr class="menu-sep">
       <div class="menu-cfg">

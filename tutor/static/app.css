@@ -92,7 +92,27 @@ body:not(.view-picker) header {
     gap: 0.25rem;
 }
 .menu-opacity-label { font-size: 0.9rem; }
-#opacity-slider { width: 100%; min-height: 32px; }
+#opacity-slider { flex: 1; min-width: 0; min-height: 32px; }
+
+.slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+.slider-step {
+    flex: 0 0 auto;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 0.5rem;
+    font-size: 1rem;
+    line-height: 1;
+    border: 1px solid #999;
+    border-radius: 4px;
+    background: #f5f5f5;
+    cursor: pointer;
+}
+.slider-step:active { background: #e0e0e0; }
+.slider-step:disabled { opacity: 0.5; cursor: not-allowed; }
 
 body { opacity: var(--page-opacity, 1); }
 
@@ -103,7 +123,7 @@ body { opacity: var(--page-opacity, 1); }
     gap: 0.25rem;
 }
 .menu-fontsize-label { font-size: 0.9rem; }
-#fontsize-slider { width: 100%; min-height: 32px; }
+#fontsize-slider { flex: 1; min-width: 0; min-height: 32px; }
 
 .thread-conversation { font-size: calc(1rem * var(--content-scale, 1)); }
 
