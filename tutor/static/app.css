@@ -20,6 +20,11 @@ body:not(.view-picker) header {
     top: 0;
     z-index: 30;
     background: Canvas;
+    transition: transform 0.2s ease-out;
+    will-change: transform;
+}
+body:not(.view-picker) header.is-hidden {
+    transform: translateY(-100%);
 }
 
 .header-row {

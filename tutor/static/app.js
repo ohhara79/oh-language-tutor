@@ -109,7 +109,10 @@
     const filterToggle = document.getElementById('filter-only-explained');
 
     function setMenuOpen(open) {
-        if (open) jumpRefreshCurrent();
+        if (open) {
+            jumpRefreshCurrent();
+            document.querySelector('header').classList.remove('is-hidden');
+        }
         menuBtn.setAttribute('aria-expanded', String(open));
         menuPanel.hidden = !open;
     }
@@ -499,8 +502,21 @@
     }
     let wasAtBottom = true;
     let scrollSaveTimer = null;
+    const headerEl = document.querySelector('header');
+    let lastScrollY = window.scrollY;
+    const HEADER_HIDE_DELTA = 6;
     window.addEventListener('scroll', () => {
         wasAtBottom = isWindowAtBottom();
+        const y = window.scrollY;
+        const dy = y - lastScrollY;
+        if (y <= 4 || !menuPanel.hidden) {
+            headerEl.classList.remove('is-hidden');
+        } else if (dy > HEADER_HIDE_DELTA) {
+            headerEl.classList.add('is-hidden');
+        } else if (dy < -HEADER_HIDE_DELTA) {
+            headerEl.classList.remove('is-hidden');
+        }
+        if (Math.abs(dy) > HEADER_HIDE_DELTA) lastScrollY = y;
         if (current().view !== 'list') return;
         if (!datasetName) return;
         clearTimeout(scrollSaveTimer);
