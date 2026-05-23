@@ -308,7 +308,7 @@
     // the pointer record is null/stale and we fall through to the tap path.
     // Streaming explanations are excluded — they're transient output, not a
     // stable collapse target.
-    const DRAG_PX = 6;
+    const DRAG_PX = 16;
     const POINTER_STALE_MS = 1000;
     let lastPointer = null;
 
