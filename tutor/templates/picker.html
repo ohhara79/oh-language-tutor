@@ -21,21 +21,16 @@
 
   <main id="picker-pane">
     {% if dirs %}
-    <form method="post" action="/commands/open_state_dir" class="picker-form">
-      <ul class="picker-list">
-        {% for name in dirs %}
-        <li class="picker-item">
-          <label>
-            <input type="radio" name="dir_name" value="{{ name }}"
-                   {% if name == current_view %}checked{% endif %}>
-            <span class="picker-name">{{ name }}</span>
-            {% if name == writing_dir %}<span class="picker-badge">writes here</span>{% endif %}
-          </label>
-        </li>
-        {% endfor %}
-      </ul>
-      <button type="submit" class="btn picker-submit">Open</button>
-    </form>
+    <ul class="picker-list">
+      {% for name in dirs %}
+      <li class="picker-item">
+        <a class="picker-link" href="/tutor/{{ name | urlencode }}">
+          <span class="picker-name">{{ name }}</span>
+          {% if name == writing_dir %}<span class="picker-badge">writes here</span>{% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
     {% else %}
     <p class="empty">No tutor data directories found.</p>
     {% endif %}

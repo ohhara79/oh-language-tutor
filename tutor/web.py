@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, override
-from urllib.parse import quote
 
 import uvicorn
 from claude_agent_sdk import (
@@ -344,21 +343,9 @@ def build_app(ctx: WebContext) -> FastAPI:
         html_body = ctx.env.get_template('picker.html').render(
             dirs=[d.name for d in dirs],
             writing_dir=ctx.writing_dir.name,
-            current_view=ctx.writing_dir.name,
             version=ctx.version,
         )
         return HTMLResponse(content=html_body)
-
-    @app.post('/commands/open_state_dir')
-    async def open_state_dir(  # pyright: ignore[reportUnusedFunction]
-        dir_name: Annotated[str, Form()],
-    ) -> Response:
-        valid_names = {p.name for p in list_state_dirs(ctx.discovery_parent)}
-        if dir_name not in valid_names:
-            raise HTTPException(status_code=400, detail=f'unknown state dir: {dir_name!r}')
-        # Per-tab routing: the chosen dir lives in the URL, so reload in one
-        # tab can't be hijacked by a sibling tab that picked a different dir.
-        return RedirectResponse(url=f'/tutor/{quote(dir_name, safe="")}', status_code=303)
 
     @app.get('/tutor/{dir_name}', response_class=HTMLResponse)
     async def index(dir_name: str) -> Response:  # pyright: ignore[reportUnusedFunction]

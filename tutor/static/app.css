@@ -162,11 +162,18 @@ body { opacity: var(--page-opacity, 1); }
     min-width: 0;
 }
 
-.picker-form { margin: 1rem 0; }
-.picker-list { list-style: none; padding: 0; margin: 0 0 1rem; }
-.picker-item { padding: 0.4rem 0; border-bottom: 1px solid #ddd; }
+.picker-list { list-style: none; padding: 0; margin: 1rem 0; }
+.picker-item { border-bottom: 1px solid #ddd; }
 .picker-item:last-child { border-bottom: none; }
-.picker-item label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.picker-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.2rem;
+    cursor: pointer;
+    color: inherit;
+    text-decoration: none;
+}
 .picker-name { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .picker-badge {
     font-size: 0.75rem;
@@ -175,7 +182,6 @@ body { opacity: var(--page-opacity, 1); }
     padding: 0.1rem 0.4rem;
     border-radius: 3px;
 }
-.picker-submit { margin-top: 0.5rem; }
 
 .cfg-field {
     display: flex;
