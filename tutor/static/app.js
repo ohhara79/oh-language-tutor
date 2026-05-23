@@ -182,7 +182,39 @@
         jumpSlider.value = String(idx);
         jumpCurrent.textContent = String(idx);
     }
+    // When the user drags vertically over a slider to scroll the menu, the
+    // native range still changes value (notably Android Chrome). Track the
+    // gesture axis so a vertical drag scrolls the menu without altering the
+    // slider, while a horizontal drag still adjusts it. The passive touchmove
+    // listener classifies the axis before the browser fires the `input` event,
+    // so each input handler can check guard.axis and revert when vertical.
+    function makeSliderAxisGuard(slider) {
+        const g = {axis: null, x: 0, y: 0, value: ''};
+        slider.addEventListener('touchstart', (e) => {
+            const t = e.touches[0];
+            g.axis = null;
+            g.x = t.clientX;
+            g.y = t.clientY;
+            g.value = slider.value;
+        }, {passive: true});
+        slider.addEventListener('touchmove', (e) => {
+            if (g.axis) return;
+            const t = e.touches[0];
+            const dx = Math.abs(t.clientX - g.x);
+            const dy = Math.abs(t.clientY - g.y);
+            if (Math.max(dx, dy) >= 8) g.axis = dy > dx ? 'y' : 'x';
+        }, {passive: true});
+        return g;
+    }
+
+    const jumpGuard = makeSliderAxisGuard(jumpSlider);
     jumpSlider.addEventListener('input', () => {
+        if (jumpGuard.axis === 'y') {
+            jumpSlider.value = jumpGuard.value;
+            jumpCurrent.textContent = jumpGuard.value;
+            jumpScrollTo(Number(jumpGuard.value));
+            return;
+        }
         const v = Number(jumpSlider.value);
         jumpCurrent.textContent = String(v);
         jumpScrollTo(v);
@@ -207,7 +239,12 @@
         applyOpacity(next);
     }
     applyOpacity(cfgGet('pageOpacity'));
+    const opacityGuard = makeSliderAxisGuard(opacitySlider);
     opacitySlider.addEventListener('input', () => {
+        if (opacityGuard.axis === 'y') {
+            applyOpacity(opacityGuard.value);
+            return;
+        }
         const v = opacitySlider.value;
         cfgSet('pageOpacity', v);
         applyOpacity(v);
@@ -234,7 +271,12 @@
         applyFontSize(next);
     }
     applyFontSize(cfgGet('fontSize'));
+    const fontSizeGuard = makeSliderAxisGuard(fontSizeSlider);
     fontSizeSlider.addEventListener('input', () => {
+        if (fontSizeGuard.axis === 'y') {
+            applyFontSize(fontSizeGuard.value);
+            return;
+        }
         const v = fontSizeSlider.value;
         cfgSet('fontSize', v);
         applyFontSize(v);
