@@ -244,6 +244,9 @@ body { opacity: var(--page-opacity, 1); }
     cursor: pointer;
     white-space: pre-wrap;
     word-break: break-word;
+    /* CJK closing punctuation (」。、？) can't start a line, so it hangs past
+       the box; clip it on x so the page never scrolls sideways at large font. */
+    overflow-x: clip;
     min-height: 44px;
     -webkit-user-select: text;
     user-select: text;
