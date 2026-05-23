@@ -182,42 +182,73 @@
         jumpSlider.value = String(idx);
         jumpCurrent.textContent = String(idx);
     }
-    // When the user drags vertically over a slider to scroll the menu, the
-    // native range still changes value (notably Android Chrome). Track the
-    // gesture axis so a vertical drag scrolls the menu without altering the
-    // slider, while a horizontal drag still adjusts it. The passive touchmove
-    // listener classifies the axis before the browser fires the `input` event,
-    // so each input handler can check guard.axis and revert when vertical.
-    function makeSliderAxisGuard(slider) {
-        const g = {axis: null, x: 0, y: 0, value: ''};
+    // The in-menu sliders live in a vertically scrollable popover. Dragging
+    // vertically over a slider must scroll the menu, not change the value.
+    // touch-action: pan-y (app.css) lets the menu scroll, but native range
+    // inputs on touch (notably Android Chrome) still change value: on the
+    // initial touch / first move, and then they stop firing `input` once the
+    // gesture is handed off to scrolling (pointercancel). So we cannot rely on
+    // `input` for the revert. We classify the gesture axis from touch events
+    // (which keep firing during the scroll) and commit a value only for a
+    // horizontal drag or a stationary tap, restoring the starting value on
+    // touchend/touchcancel for a vertical scroll. `apply(value)` performs the
+    // slider's effect and sets slider.value; mouse/keyboard fire no touch
+    // events, so `active` stays false and they apply live as before.
+    function guardSlider(slider, apply) {
+        let active = false; // touch gesture in progress
+        let axis = null; // 'x' adjust | 'y' scroll | null undecided
+        let startVal = ''; // value when the gesture began
+        let pending = ''; // latest value the native control wants
+        let startX = 0;
+        let startY = 0;
+
         slider.addEventListener('touchstart', (e) => {
             const t = e.touches[0];
-            g.axis = null;
-            g.x = t.clientX;
-            g.y = t.clientY;
-            g.value = slider.value;
+            active = true;
+            axis = null;
+            startVal = slider.value;
+            pending = slider.value;
+            startX = t.clientX;
+            startY = t.clientY;
         }, {passive: true});
+
         slider.addEventListener('touchmove', (e) => {
-            if (g.axis) return;
+            if (!active || axis) return;
             const t = e.touches[0];
-            const dx = Math.abs(t.clientX - g.x);
-            const dy = Math.abs(t.clientY - g.y);
-            if (Math.max(dx, dy) >= 8) g.axis = dy > dx ? 'y' : 'x';
+            const dx = Math.abs(t.clientX - startX);
+            const dy = Math.abs(t.clientY - startY);
+            if (Math.max(dx, dy) < 8) return;
+            axis = dy > dx ? 'y' : 'x';
+            if (axis === 'x') apply(pending); // commit the deferred drag
         }, {passive: true});
-        return g;
+
+        function finish() {
+            if (!active) return;
+            active = false;
+            if (axis === null) {
+                apply(pending); // stationary tap
+            } else if (axis === 'y') {
+                apply(startVal); // vertical scroll: restore
+            }
+            axis = null;
+        }
+        slider.addEventListener('touchend', finish, {passive: true});
+        slider.addEventListener('touchcancel', finish, {passive: true});
+
+        slider.addEventListener('input', () => {
+            pending = slider.value;
+            if (active && axis !== 'x') {
+                apply(startVal); // undecided or vertical: hold at start
+                return;
+            }
+            apply(slider.value); // horizontal drag, or mouse/keyboard
+        });
     }
 
-    const jumpGuard = makeSliderAxisGuard(jumpSlider);
-    jumpSlider.addEventListener('input', () => {
-        if (jumpGuard.axis === 'y') {
-            jumpSlider.value = jumpGuard.value;
-            jumpCurrent.textContent = jumpGuard.value;
-            jumpScrollTo(Number(jumpGuard.value));
-            return;
-        }
-        const v = Number(jumpSlider.value);
+    guardSlider(jumpSlider, (v) => {
+        jumpSlider.value = String(v);
         jumpCurrent.textContent = String(v);
-        jumpScrollTo(v);
+        jumpScrollTo(Number(v));
     });
 
     const opacitySlider = document.getElementById('opacity-slider');
@@ -239,14 +270,8 @@
         applyOpacity(next);
     }
     applyOpacity(cfgGet('pageOpacity'));
-    const opacityGuard = makeSliderAxisGuard(opacitySlider);
-    opacitySlider.addEventListener('input', () => {
-        if (opacityGuard.axis === 'y') {
-            applyOpacity(opacityGuard.value);
-            return;
-        }
-        const v = opacitySlider.value;
-        cfgSet('pageOpacity', v);
+    guardSlider(opacitySlider, (v) => {
+        cfgSet('pageOpacity', String(v));
         applyOpacity(v);
     });
     opacityMinus.addEventListener('click', () => stepOpacity(-10));
@@ -271,14 +296,8 @@
         applyFontSize(next);
     }
     applyFontSize(cfgGet('fontSize'));
-    const fontSizeGuard = makeSliderAxisGuard(fontSizeSlider);
-    fontSizeSlider.addEventListener('input', () => {
-        if (fontSizeGuard.axis === 'y') {
-            applyFontSize(fontSizeGuard.value);
-            return;
-        }
-        const v = fontSizeSlider.value;
-        cfgSet('fontSize', v);
+    guardSlider(fontSizeSlider, (v) => {
+        cfgSet('fontSize', String(v));
         applyFontSize(v);
     });
     fontSizeMinus.addEventListener('click', () => stepFontSize(-10));
