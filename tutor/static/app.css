@@ -72,6 +72,9 @@ body:not(.view-picker) header.is-hidden {
     padding: 0;
 }
 .menu-panel[hidden] { display: none; }
+/* Vertical drag scrolls the menu; horizontal drag still adjusts the slider.
+   Without this, dragging the menu open via a slider changes its value. */
+.menu-panel input[type="range"] { touch-action: pan-y; }
 .menu-item {
     display: flex;
     align-items: center;
