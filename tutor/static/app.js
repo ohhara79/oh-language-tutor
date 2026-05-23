@@ -401,8 +401,13 @@
                     current().thread_id = tid;
                     t.scrollTop = t.scrollHeight;
                 }
-                const ta = t.querySelector('form.thread-compose textarea[name="text"]');
-                if (ta) ta.focus();
+                // Focus only on POST (Ask = open_thread). On GET (reopening
+                // a follow-up thread) the user wants to read, not type.
+                const verb = evt.detail?.requestConfig?.verb;
+                if (verb !== 'get') {
+                    const ta = t.querySelector('form.thread-compose textarea[name="text"]');
+                    if (ta) ta.focus();
+                }
             } else if (current().view === 'thread') {
                 // Thread was deleted while viewing it -> go back.
                 // Don't fire hide on pop — delete already disconnected.
