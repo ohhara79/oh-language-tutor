@@ -231,6 +231,7 @@ body { opacity: var(--page-opacity, 1); }
 .raw-toggle {
     display: block;
     width: 100%;
+    box-sizing: border-box;
     text-align: left;
     background: transparent;
     border: none;
