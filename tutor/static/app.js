@@ -361,14 +361,14 @@
     });
 
     // Tap a raw-line toggle in list view -> inline-expand that line's detail;
-    // tap the rendered explanation -> collapse that line. Clicking a different
-    // line collapses the previous one; clicking the same line's raw text again
-    // collapses it (toggle). We suppress the toggle when the click was actually
-    // the end of a text-selection drag, so the user can copy the raw text or
-    // the explanation. Keyboard activation (Enter/Space) has no pointerdown ->
-    // the pointer record is null/stale and we fall through to the tap path.
-    // Streaming explanations are excluded — they're transient output, not a
-    // stable collapse target.
+    // tap the explanation (rendered or still streaming) -> collapse that line.
+    // Clicking a different line collapses the previous one; clicking the same
+    // line's raw text again collapses it (toggle). We suppress the toggle when
+    // the click was actually the end of a text-selection drag, so the user can
+    // copy the raw text or the explanation. Keyboard activation (Enter/Space)
+    // has no pointerdown -> the pointer record is null/stale and we fall
+    // through to the tap path. Mid-stream collapses are kept closed on
+    // completion by the htmx:oobBeforeSwap listener below.
     const DRAG_PX = 16;
     const POINTER_STALE_MS = 1000;
     let lastPointer = null;
@@ -376,10 +376,7 @@
     const streamPane = document.getElementById('stream-pane');
 
     function toggleTarget(el) {
-        const t = el.closest('.raw-toggle, .explanation-body, .line-actions');
-        if (!t) return null;
-        if (t.classList.contains('explain-stream-body')) return null;
-        return t;
+        return el.closest('.raw-toggle, .explanation-body, .line-actions');
     }
 
     streamPane.addEventListener('pointerdown', (e) => {
