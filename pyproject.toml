@@ -5,7 +5,7 @@ description = "oh-language-tutor"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "claude-agent-sdk==0.1.63",
+    "claude-agent-sdk==0.2.139",
     "fastapi==0.136.0",
     "jinja2==3.1.6",
     "markdown==3.10.2",
