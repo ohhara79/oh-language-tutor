@@ -303,7 +303,7 @@ def _dir_url(ctx: WebContext, suffix: str = '', *, dir_name: str | None = None) 
     return f'/tutor/{quote(name, safe="")}{suffix}'
 
 
-# -- picker / open_state_dir -------------------------------------------------
+# -- picker ------------------------------------------------------------------
 
 
 async def test_get_root_renders_picker_with_writing_badge(tmp_path: Path):
@@ -329,52 +329,29 @@ async def test_get_root_renders_when_no_dirs_present(tmp_path: Path):
     assert 'No tutor data' in r.text
 
 
-async def test_post_open_state_dir_redirects_to_dir_path(tmp_path: Path):
+async def test_get_root_renders_picker_rows_as_links(tmp_path: Path):
     ctx, _ = _build_ctx(tmp_path)
     (tmp_path / 'other').mkdir()
     async with _client(ctx) as client:
-        r = await client.post('/commands/open_state_dir', data={'dir_name': 'other'})
-    assert r.status_code == 303
-    assert r.headers['location'] == '/tutor/other'
+        r = await client.get('/')
+    assert r.status_code == 200
+    assert f'href="{_dir_url(ctx, dir_name="other")}"' in r.text
 
 
-async def test_post_open_state_dir_supports_non_ascii_name(tmp_path: Path):
-    # State-dir names with non-ASCII characters (e.g. Chinese) must round-trip
-    # through the URL-encoded redirect Location and resolve to the right session
-    # on the follow-up GET.
+async def test_picker_link_supports_non_ascii_name(tmp_path: Path):
+    # State-dir names with non-ASCII characters (e.g. Chinese) must be
+    # percent-encoded in the picker link and resolve to the right session when
+    # the browser follows it.
     ctx, _ = _build_ctx(tmp_path)
     cjk_name = '老友记.S01E01'
     (tmp_path / cjk_name).mkdir()
+    href = _dir_url(ctx, dir_name=cjk_name)
     async with _client(ctx) as client:
-        r = await client.post(
-            '/commands/open_state_dir',
-            data={'dir_name': cjk_name},
-        )
-        assert r.status_code == 303
-        assert r.headers['location'] == f'/tutor/{quote(cjk_name, safe="")}'
-        r2 = await client.get(r.headers['location'])
+        r = await client.get('/')
+        assert f'href="{href}"' in r.text
+        r2 = await client.get(href)
     assert r2.status_code == 200
     assert cjk_name in r2.text
-
-
-async def test_post_open_state_dir_rejects_unknown_dir(tmp_path: Path):
-    ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx) as client:
-        r = await client.post(
-            '/commands/open_state_dir',
-            data={'dir_name': 'no-such-dir'},
-        )
-    assert r.status_code == 400
-
-
-async def test_post_open_state_dir_rejects_traversal(tmp_path: Path):
-    ctx, _ = _build_ctx(tmp_path)
-    async with _client(ctx) as client:
-        r = await client.post(
-            '/commands/open_state_dir',
-            data={'dir_name': '../../etc'},
-        )
-    assert r.status_code == 400
 
 
 async def test_get_tutor_unknown_dir_redirects_to_picker(tmp_path: Path):
