@@ -227,6 +227,10 @@ body { opacity: var(--page-opacity, 1); }
 .line.has-explanation .raw-toggle {
     border-left: 3px solid #0b6bcb;
 }
+/* Explanation in progress: collapsed, gray dashed cue until it's ready. */
+.line.streaming .raw-toggle {
+    border-left: 3px dashed #999;
+}
 
 .raw-toggle {
     display: block;
@@ -481,6 +485,7 @@ body.view-thread #thread-conversation { display: flex; }
     header { border-color: #444; }
     .line { border-color: #333; }
     .line.has-explanation .raw-toggle { border-left-color: #9bf; }
+    .line.streaming .raw-toggle { border-left-color: #666; }
     .msg.user { color: #6ab0ff; }
     .anchor-raw { color: #bbb; }
     blockquote { color: #bbb; }

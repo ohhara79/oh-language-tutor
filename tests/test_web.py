@@ -646,6 +646,7 @@ async def test_post_explain_happy_path(
         )
         assert r.status_code == 200
         assert 'id="explain-stream-u-1"' in r.text
+        assert 'class="line streaming"' in r.text  # collapsed, no ready indicator
         assert 'Explaining' in r.text
         await ctx.writing_session.sink.flush_pending_writes()
 

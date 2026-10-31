@@ -94,7 +94,8 @@ class WebSink:
 
         Three states: explained (rendered markdown body), streaming (empty
         container that SSE chunks land in), or unexplained (Explain/Delete
-        buttons). ``streaming`` implies ``active`` so the line is open.
+        buttons). Streaming lines render collapsed: the user keeps reading
+        while the explanation streams in the background.
         ``error_message`` attaches an inline notice on the unexplained
         branch so the user sees why their last attempt was rejected.
         """
@@ -104,7 +105,7 @@ class WebSink:
             threads=[],
             raw_escaped=html.escape(entry.raw),
             explanation_html=explanation_html,
-            active=active or streaming or error_message is not None,
+            active=active or error_message is not None,
             streaming=streaming,
             error_message=error_message,
             view_dir=self._view_dir,
@@ -120,7 +121,7 @@ class WebSink:
         explanation = entry.explanation or ''
         self._log.write(f'--- explanation for: {entry.raw}\n{explanation}\n---\n')
         self._explain_buffers.pop(entry.id, None)
-        fragment = self.render_line(entry, active=True)
+        fragment = self.render_line(entry)
         # The line.html section already carries id="line-{entry.id}", so an
         # outerHTML OOB swap targeting that id replaces the unexplained
         # variant in every connected tab.

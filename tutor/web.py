@@ -525,7 +525,7 @@ def build_app(ctx: WebContext) -> FastAPI:
             raise HTTPException(status_code=404, detail='entry not found')
         target = entries[idx]
         if target.explanation is not None:
-            return HTMLResponse(content=session.sink.render_line(target, active=True))
+            return HTMLResponse(content=session.sink.render_line(target))
         mismatch_msg = detect_language_mismatch(source_language, target.raw)
         if mismatch_msg is not None:
             return HTMLResponse(

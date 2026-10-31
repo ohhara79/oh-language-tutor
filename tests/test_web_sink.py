@@ -89,6 +89,8 @@ async def test_on_entry_explained_broadcasts_oob_swap(tmp_path: Path, jinja_env:
     assert event == 'entry_explained'
     assert 'id="line-id-2"' in fragment
     assert 'hx-swap-oob="outerHTML"' in fragment
+    # Completed line arrives collapsed with the ready indicator.
+    assert 'class="line has-explanation"' in fragment
     assert '--- explanation for: raw' in log.getvalue()
     # Sink should not persist on its own — endpoint owns persistence.
     assert store.load() == []
@@ -206,6 +208,16 @@ def test_render_line_unexplained_without_error_message_omits_block(
     sink, _, _ = _sink(tmp_path, jinja_env)
     html = sink.render_line(TutorEntry(raw='raw', id='x'))
     assert 'line-error' not in html
+
+
+def test_render_line_streaming_is_collapsed_without_ready_indicator(
+    tmp_path: Path,
+    jinja_env: Environment,
+):
+    sink, _, _ = _sink(tmp_path, jinja_env)
+    html = sink.render_line(TutorEntry(raw='raw', id='x'), streaming=True)
+    assert 'class="line streaming"' in html
+    assert 'id="explain-stream-x"' in html
 
 
 async def test_on_explain_chunk_broadcasts_rendered_markdown(tmp_path: Path, jinja_env: Environment):

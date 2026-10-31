@@ -367,7 +367,7 @@
     // the click was actually the end of a text-selection drag, so the user can
     // copy the raw text or the explanation. Keyboard activation (Enter/Space)
     // has no pointerdown -> the pointer record is null/stale and we fall
-    // through to the tap path. Mid-stream collapses are kept closed on
+    // through to the tap path. A line opened mid-stream is kept open on
     // completion by the htmx:oobBeforeSwap listener below.
     const DRAG_PX = 16;
     const POINTER_STALE_MS = 1000;
@@ -621,10 +621,9 @@
         }
     });
 
-    // When an explanation finishes streaming, the server OOB-swaps the line
-    // back in with .active set. If the user had explicitly closed the panel
-    // while it was streaming (by tapping the raw text or expanding a
-    // different line), respect that and keep it closed.
+    // Clicking Explain collapses the line; when the explanation finishes the
+    // server OOB-swaps it back in collapsed (the blue border marks it ready).
+    // If the user opened the line mid-stream to watch, keep it open.
     // htmx 2.x passes a DocumentFragment (not the element) as evt.detail.fragment
     // for outerHTML OOB swaps, so mutate firstElementChild rather than the
     // fragment itself.
@@ -633,9 +632,9 @@
         const fragment = evt.detail && evt.detail.fragment;
         if (!oldEl || !fragment || !oldEl.classList) return;
         if (!oldEl.classList.contains('streaming')) return;
-        if (oldEl.classList.contains('active')) return;
+        if (!oldEl.classList.contains('active')) return;
         const newEl = fragment.firstElementChild;
-        if (newEl && newEl.classList) newEl.classList.remove('active');
+        if (newEl && newEl.classList) newEl.classList.add('active');
     });
 
     // Enter submits the compose form; Shift+Enter inserts a newline.
